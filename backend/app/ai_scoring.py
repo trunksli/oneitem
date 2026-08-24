@@ -9,8 +9,6 @@ try:
 except ImportError:
     YouTubeTranscriptApi = None
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
 def get_video_transcript(video_id: str) -> str:
     """Fetches the transcript for a YouTube video."""
     if not YouTubeTranscriptApi:
@@ -26,18 +24,24 @@ def get_video_transcript(video_id: str) -> str:
 
 def call_llm(prompt: str) -> dict:
     """Calls the Gemini API directly using requests (compatible with Python 3.6)."""
+    # Read at call time (not import time) so it works regardless of when load_dotenv() ran.
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     if not GEMINI_API_KEY:
-        print("GEMINI_API_KEY is not set.")
-        # Return mock data for local testing if no key is provided
-        return {
-            "quality_score": 85,
-            "interestingness_score": 90,
-            "trustworthiness_score": 95,
-            "originality_score": 80,
-            "expertise_score": 90,
-            "clickbait_penalty": 0,
-            "explanation": "A fascinating mock explanation of this video."
-        }
+        # Mock data must be explicitly opted into, otherwise fake scores end up
+        # in the DB and can get auto-published as if they were real evaluations.
+        if os.getenv("ALLOW_MOCK_SCORING") == "1":
+            print("GEMINI_API_KEY is not set - using MOCK scores (ALLOW_MOCK_SCORING=1).")
+            return {
+                "quality_score": 85,
+                "interestingness_score": 90,
+                "trustworthiness_score": 95,
+                "originality_score": 80,
+                "expertise_score": 90,
+                "clickbait_penalty": 0,
+                "explanation": "[MOCK] A fascinating mock explanation of this video."
+            }
+        print("GEMINI_API_KEY is not set. Skipping scoring (set ALLOW_MOCK_SCORING=1 to use mock scores for local testing).")
+        return {}
         
     model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
@@ -89,8 +93,8 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     
     Title: {candidate.title}
     Channel: {candidate.creator_name}
-    Description: {candidate.description[:500]}...
-    Transcript: {transcript[:3000]}...
+    Description: {(candidate.description or "")[:500]}...
+    Transcript: {(transcript or "")[:3000]}...
     
     Please provide a JSON response with the following keys:
     - quality_score: Integer 0-100. How well-made, substantive, and worthwhile is this?
@@ -111,14 +115,31 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     if not scores:
         print("Failed to get scores for", candidate.id)
         return False
-        
+
+    def clamp_score(key):
+        """Coerce an LLM-provided score to a float in [0, 100]; None if absent/invalid."""
+        value = scores.get(key)
+        try:
+            return max(0.0, min(100.0, float(value)))
+        except (TypeError, ValueError):
+            return None
+
+    quality = clamp_score("quality_score")
+    interestingness = clamp_score("interestingness_score")
+
+    # Without the two core scores the composite is meaningless; leave the
+    # candidate PENDING_AI so a later run can retry instead of ranking it at 0.
+    if quality is None or interestingness is None:
+        print("LLM response missing core scores for", candidate.id, "- leaving as PENDING_AI.")
+        return False
+
     # Map AI scores to the candidate model
-    candidate.quality_score = scores.get("quality_score", 0)
-    candidate.interestingness_score = scores.get("interestingness_score", 0)
-    candidate.trustworthiness_score = scores.get("trustworthiness_score", 0)
-    candidate.originality_score = scores.get("originality_score", 0)
-    candidate.expertise_score = scores.get("expertise_score", 0)
-    candidate.clickbait_penalty = scores.get("clickbait_penalty", 0)
+    candidate.quality_score = quality
+    candidate.interestingness_score = interestingness
+    candidate.trustworthiness_score = clamp_score("trustworthiness_score") or 0
+    candidate.originality_score = clamp_score("originality_score") or 0
+    candidate.expertise_score = clamp_score("expertise_score") or 0
+    candidate.clickbait_penalty = clamp_score("clickbait_penalty") or 0
     candidate.ai_explanation = scores.get("explanation", "")
     
     theme_str = scores.get("theme", "Random")
@@ -149,7 +170,9 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     # Quick-and-dirty Viral Outlier Score
     # We look for a high ratio of views to subscribers, especially on recent videos.
     # A standard video gets ~10% of subscriber count in views.
-    ratio = views / max(subs, 1)
+    # Channels that hide their subscriber count come through as 0 - without real
+    # subscriber data the ratio is meaningless, so no bonus in that case.
+    ratio = (views / subs) if subs > 0 else 0
     
     outlier_bonus = 0
     if candidate.upload_date:

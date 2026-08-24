@@ -1,14 +1,16 @@
-import os
+﻿import os
 import re
 import requests
 import datetime
 from sqlalchemy.orm import Session
 from . import models, database
 
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+def get_youtube_api_key():
+    # Read at call time (not import time) so it works regardless of when load_dotenv() ran.
+    return os.getenv("YOUTUBE_API_KEY")
 
 def get_channel_info(channel_id: str):
-    url = f"https://www.googleapis.com/youtube/v3/channels?part=contentDetails,statistics&id={channel_id}&key={YOUTUBE_API_KEY}"
+    url = f"https://www.googleapis.com/youtube/v3/channels?part=contentDetails,statistics&id={channel_id}&key={get_youtube_api_key()}"
     res = requests.get(url)
     res.raise_for_status()
     data = res.json()
@@ -17,14 +19,14 @@ def get_channel_info(channel_id: str):
     return data['items'][0]
 
 def get_playlist_items(playlist_id: str, max_results: int = 10):
-    url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId={playlist_id}&maxResults={max_results}&key={YOUTUBE_API_KEY}"
+    url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId={playlist_id}&maxResults={max_results}&key={get_youtube_api_key()}"
     res = requests.get(url)
     res.raise_for_status()
     return res.json().get('items', [])
 
 def get_videos_details(video_ids: list):
     ids_str = ",".join(video_ids)
-    url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id={ids_str}&key={YOUTUBE_API_KEY}"
+    url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id={ids_str}&key={get_youtube_api_key()}"
     res = requests.get(url)
     res.raise_for_status()
     return res.json().get('items', [])
@@ -33,7 +35,7 @@ def fetch_latest_videos_from_channel(channel_id: str, max_results: int = 10):
     """
     Fetches the latest videos from a specific channel to seed the DB.
     """
-    if not YOUTUBE_API_KEY:
+    if not get_youtube_api_key():
         raise ValueError("YOUTUBE_API_KEY not set")
         
     channel_info = get_channel_info(channel_id)
@@ -59,14 +61,15 @@ def fetch_latest_videos_from_channel(channel_id: str, max_results: int = 10):
         stats = item['statistics']
         content_details = item['contentDetails']
         
-        # Parse ISO 8601 duration to seconds roughly
+        # Parse ISO 8601 duration (e.g. PT1H2M10S) to seconds.
+        # Anchor on the time designator 'T' so the hours component is included
+        # and the date-part 'M' (months) can never be misread as minutes.
         duration_raw = content_details['duration']
-        minutes_match = re.search(r'(\d+)M', duration_raw)
-        seconds_match = re.search(r'(\d+)S', duration_raw)
-        
-        minutes = int(minutes_match.group(1)) if minutes_match else 0
-        seconds = int(seconds_match.group(1)) if seconds_match else 0
-        duration_seconds = (minutes * 60) + seconds
+        duration_match = re.search(r'T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', duration_raw)
+        hours, minutes, seconds = (
+            (int(g) if g else 0) for g in (duration_match.groups() if duration_match else (0, 0, 0))
+        )
+        duration_seconds = (hours * 3600) + (minutes * 60) + seconds
 
         candidates.append({
             "source_id": item['id'],
@@ -121,3 +124,4 @@ if __name__ == "__main__":
     print("Starting ingestion...")
     ingest_seed_channels(db, SEED_CHANNELS)
     print("Ingestion complete.")
+

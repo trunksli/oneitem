@@ -17,11 +17,26 @@ def schedule_top_candidate():
             print(f"Already have an HourlyOne for {current_hour}")
             return
             
-        # Get top scored candidate that is PENDING_REVIEW
-        top_candidate = db.query(models.ContentCandidate).filter(
+        # Theme rotation: prefer a top candidate whose theme differs from the
+        # previous hour's, so the same theme doesn't run back-to-back all day.
+        previous = db.query(models.HourlyOne).filter(
+            models.HourlyOne.publish_time < current_hour
+        ).order_by(models.HourlyOne.publish_time.desc()).first()
+
+        pending = db.query(models.ContentCandidate).filter(
             models.ContentCandidate.status == models.Status.PENDING_REVIEW
-        ).order_by(models.ContentCandidate.diamond_score.desc()).first()
-        
+        )
+
+        top_candidate = None
+        if previous and previous.theme:
+            top_candidate = pending.filter(
+                models.ContentCandidate.theme != previous.theme
+            ).order_by(models.ContentCandidate.diamond_score.desc()).first()
+
+        # Fall back to the overall best if every remaining candidate shares the theme
+        if not top_candidate:
+            top_candidate = pending.order_by(models.ContentCandidate.diamond_score.desc()).first()
+
         if not top_candidate:
             print("No pending review candidates available to schedule.")
             return

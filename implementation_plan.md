@@ -18,17 +18,19 @@ We have built a functional MVP focusing on backend ingestion, AI scoring, and a 
 ### 2.1 Backend & Ingestion Engine (Python)
 *   **Database:** SQLite (`sql_app_v2.db`) used for rapid MVP prototyping, interfaced via SQLAlchemy.
 *   **Ingestion Script (`ingestion.py`):** Uses the YouTube Data API (via direct HTTP requests to avoid Python 3.6 library conflicts) to pull the latest videos from a list of high-quality "seed" channels.
-*   **AI Scoring Pipeline (`ai_scoring.py`):** Uses Gemini 1.5 Flash (via REST) to evaluate candidates. 
+*   **AI Scoring Pipeline (`ai_scoring.py`):** Uses Gemini via REST (model set by the `GEMINI_MODEL` env var). Scores from the LLM are validated and clamped to 0-100; if the API key is missing, scoring is skipped unless `ALLOW_MOCK_SCORING=1` explicitly opts into mock data.
     *   It extracts transcripts and evaluates content based on: Quality, Interestingness, Rarity, Originality, and Clickbait (Penalty).
     *   **Viral Outlier Score:** We implemented a hybrid calculation that checks the video's views against the channel's subscriber count. If a video is recent (under 14 days old) and has a view-to-subscriber ratio > 3x, it receives a massive score bonus. This bubbles potential "pre-viral" hits to the top.
     *   **Rotating Themes:** The AI assigns a `Theme` (e.g., Bioscience, Architecture, Oddball, AI) to each candidate so content can rotate predictably throughout the day.
-*   **Auto-Scheduler (`auto_schedule.py`):** Automatically promotes the highest-scoring `ContentCandidate` to the active `HourlyOne` slot.
-*   **API Server (`simple_api.py`):** A lightweight pure-Python HTTP server serving the active `HourlyOne` and managing real-time chat endpoints.
+*   **Auto-Scheduler (`auto_schedule.py`):** Promotes the highest-scoring `ContentCandidate` to the active `HourlyOne` slot, preferring a different theme than the previous hour so themes rotate.
+*   **Hourly Runner (`run_hourly.py`):** Long-running loop that re-runs the ingestion/scoring pipeline every 6 hours (configurable via `PIPELINE_EVERY_HOURS`) and schedules a new `HourlyOne` at the top of every hour.
+*   **API Server (`simple_api.py`):** A lightweight pure-Python HTTP server (threaded) serving the active `HourlyOne` (current hour, falling back to the latest with an `is_stale` flag), the daily chat (`/comments`, today's messages only, newest 50), and `/feedback`. A FastAPI equivalent lives in `app/main.py` for when the stack moves to a modern Python.
 
 ### 2.2 Frontend (Next.js)
 *   **Minimalist UI (`page.tsx`):** A clean, distraction-free interface showing only the current hour's featured content, its metadata, and the AI-generated editorial explanation.
-*   **Feedback Mechanism:** Large buttons asking "Never Seen It" vs "I Knew This" to track content novelty.
-*   **Side-Panel Chat:** A persistent community chat that slides in from the right. It allows users to discuss the current content. The chat is designed as a "Daily Lobby" that clears at midnight.
+*   **Playable Media:** Clicking the thumbnail plays YouTube content in an embedded player (non-YouTube sources open in a new tab). The page re-checks `/hourly` every minute so an open tab rolls over to the new hour automatically.
+*   **Feedback Mechanism:** Large buttons asking "Never Seen It" vs "I Knew This" post to `/feedback` (stored against the current `HourlyOne`) and show a thank-you state.
+*   **Side-Panel Chat:** A persistent community chat that slides in from the right. It allows users to discuss the current content. The chat is a "Daily Lobby": the API only returns comments posted since midnight (UTC), so it clears daily.
 
 ---
 

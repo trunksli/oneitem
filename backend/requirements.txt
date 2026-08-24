@@ -1,0 +1,10 @@
+# Pinned to versions compatible with the current Python 3.6 environment.
+# When upgrading to Python 3.12+, bump these (note: youtube-transcript-api >= 1.0
+# changed its interface from the static get_transcript() to an instance-based API).
+requests==2.27.1
+SQLAlchemy==1.4.52
+python-dotenv==0.20.0
+youtube-transcript-api==0.6.2
+fastapi==0.68.1
+uvicorn==0.16.0
+pydantic==1.7.4

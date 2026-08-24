@@ -1,0 +1,22 @@
+# Secrets — never commit API keys
+.env
+.env.*
+!.env.example
+
+# Python
+backend/venv/
+__pycache__/
+*.pyc
+
+# Local database (contains user data)
+*.db
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+
+# Misc
+.DS_Store
+*.log

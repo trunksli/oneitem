@@ -147,17 +147,113 @@ def admin_schedule(action: AdminAction, db: Session = Depends(get_db)):
         hourly.candidate_id = candidate.id
         hourly.theme = candidate.theme or models.Theme.RANDOM
         hourly.editorial_explanation = candidate.ai_explanation
+        hourly.views_at_feature = candidate.view_count
+        hourly.views_after_7d = None
+        hourly.outcome_checked_at = None
     else:
         hourly = models.HourlyOne(
             publish_time=hour_start,
             theme=candidate.theme or models.Theme.RANDOM,
             candidate_id=candidate.id,
             editorial_explanation=candidate.ai_explanation,
+            views_at_feature=candidate.view_count,
         )
         db.add(hourly)
     candidate.status = models.Status.PUBLISHED
     db.commit()
     return {"hourly_id": hourly.id, "candidate_id": candidate.id, "publish_time": hour_start}
+
+def _outcome_rows(db: Session):
+    """Featured picks with frozen scores, view deltas, and feedback tallies."""
+    now = datetime.datetime.utcnow()
+    hourlies = db.query(models.HourlyOne).filter(
+        models.HourlyOne.publish_time <= now
+    ).order_by(models.HourlyOne.publish_time.desc()).limit(200).all()
+    candidates = {c.id: c for c in db.query(models.ContentCandidate).filter(
+        models.ContentCandidate.id.in_([h.candidate_id for h in hourlies])).all()}
+
+    feedback = {}
+    for f in db.query(models.Feedback).all():
+        tallies = feedback.setdefault(f.hourly_one_id, {"never_seen": 0, "knew_already": 0})
+        if f.seen_before == models.SeenBefore.NEVER_SEEN:
+            tallies["never_seen"] += 1
+        else:
+            tallies["knew_already"] += 1
+
+    rows = []
+    for h in hourlies:
+        c = candidates.get(h.candidate_id)
+        tallies = feedback.get(h.id, {"never_seen": 0, "knew_already": 0})
+        growth = None
+        if h.views_at_feature and h.views_after_7d:
+            growth = round(h.views_after_7d / h.views_at_feature, 2)
+        rows.append({
+            "hourly_id": h.id, "publish_time": h.publish_time, "theme": h.theme,
+            "views_at_feature": h.views_at_feature, "views_after_7d": h.views_after_7d,
+            "outcome_checked_at": h.outcome_checked_at, "growth_ratio": growth,
+            "candidate_id": h.candidate_id,
+            "title": c.title if c else None,
+            "creator_name": c.creator_name if c else None,
+            "source_type": c.source_type if c else None,
+            "url": c.url if c else None,
+            "diamond_score": c.diamond_score if c else None,
+            "quality_score": c.quality_score if c else None,
+            "interestingness_score": c.interestingness_score if c else None,
+            "rarity_score": c.rarity_score if c else None,
+            "originality_score": c.originality_score if c else None,
+            "outlier_score": c.outlier_score if c else None,
+            "clickbait_penalty": c.clickbait_penalty if c else None,
+            "trustworthiness_score": c.trustworthiness_score if c else None,
+            "never_seen": tallies["never_seen"],
+            "knew_already": tallies["knew_already"],
+        })
+    return rows
+
+@app.get("/admin/outcomes", dependencies=[Depends(require_admin)])
+def admin_outcomes(db: Session = Depends(get_db)):
+    return _outcome_rows(db)
+
+@app.get("/admin/sources", dependencies=[Depends(require_admin)])
+def admin_sources(db: Session = Depends(get_db)):
+    from sqlalchemy import func, case
+    sources = {}
+    stats_query = db.query(
+        models.ContentCandidate.creator_name,
+        models.ContentCandidate.source_type,
+        func.count().label("candidates"),
+        func.avg(models.ContentCandidate.diamond_score).label("avg_diamond"),
+        func.sum(case([(models.ContentCandidate.status == models.Status.REJECTED, 1)], else_=0)).label("rejected"),
+    ).group_by(models.ContentCandidate.creator_name, models.ContentCandidate.source_type)
+    for row in stats_query.all():
+        sources[(row.creator_name, row.source_type)] = {
+            "creator_name": row.creator_name, "source_type": row.source_type,
+            "candidates": row.candidates,
+            "avg_diamond": round(row.avg_diamond, 1) if row.avg_diamond is not None else None,
+            "rejected": row.rejected or 0,
+            "picks_featured": 0, "never_seen": 0, "knew_already": 0,
+            "growth_ratios": [], "blowups": 0,
+        }
+    for outcome in _outcome_rows(db):
+        stats = sources.get((outcome["creator_name"], outcome["source_type"]))
+        if not stats:
+            continue
+        stats["picks_featured"] += 1
+        stats["never_seen"] += outcome["never_seen"]
+        stats["knew_already"] += outcome["knew_already"]
+        if outcome["growth_ratio"] is not None:
+            stats["growth_ratios"].append(outcome["growth_ratio"])
+            if outcome["growth_ratio"] >= 3.0:
+                stats["blowups"] += 1
+    result = []
+    for stats in sources.values():
+        ratios = stats.pop("growth_ratios")
+        stats["avg_growth_ratio"] = round(sum(ratios) / len(ratios), 2) if ratios else None
+        stats["outcomes_checked"] = len(ratios)
+        total = stats["never_seen"] + stats["knew_already"]
+        stats["never_seen_rate"] = round(stats["never_seen"] / total, 2) if total else None
+        result.append(stats)
+    result.sort(key=lambda s: (s["picks_featured"], s["candidates"]), reverse=True)
+    return result
 
 @app.post("/admin/reject", dependencies=[Depends(require_admin)])
 def admin_reject(action: AdminAction, db: Session = Depends(get_db)):

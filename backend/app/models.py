@@ -81,6 +81,12 @@ class HourlyOne(Base):
     editorial_explanation = Column(Text, nullable=True)
     is_bandit_winner = Column(Boolean, default=False) # For future multi-armed bandit
 
+    # Incrementality tracking: view count when featured vs ~7 days later.
+    # A pick that stayed obscure was incremental; one that exploded anyway was frontrun.
+    views_at_feature = Column(BigInteger, nullable=True)
+    views_after_7d = Column(BigInteger, nullable=True)
+    outcome_checked_at = Column(DateTime, nullable=True)
+
 class User(Base):
     __tablename__ = "users"
 

@@ -24,13 +24,54 @@ interface QueueCandidate {
   ai_explanation: string | null;
 }
 
+interface SourceStats {
+  creator_name: string;
+  source_type: string;
+  candidates: number;
+  avg_diamond: number | null;
+  rejected: number;
+  picks_featured: number;
+  never_seen: number;
+  knew_already: number;
+  never_seen_rate: number | null;
+  avg_growth_ratio: number | null;
+  outcomes_checked: number;
+  blowups: number;
+}
+
+interface Outcome {
+  hourly_id: string;
+  publish_time: string;
+  title: string | null;
+  creator_name: string | null;
+  views_at_feature: number | null;
+  views_after_7d: number | null;
+  growth_ratio: number | null;
+  never_seen: number;
+  knew_already: number;
+  diamond_score: number | null;
+  quality_score: number | null;
+  interestingness_score: number | null;
+  rarity_score: number | null;
+  originality_score: number | null;
+  outlier_score: number | null;
+  clickbait_penalty: number | null;
+}
+
 function num(value: number | null): string {
   return value == null ? "–" : String(Math.round(value));
+}
+
+function compact(value: number | null): string {
+  if (value == null) return "–";
+  return Intl.NumberFormat('en-US', { notation: 'compact' }).format(value);
 }
 
 export default function Admin() {
   const [token, setToken] = useState("");
   const [queue, setQueue] = useState<QueueCandidate[]>([]);
+  const [sources, setSources] = useState<SourceStats[]>([]);
+  const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [status, setStatus] = useState("Enter the admin token to load the queue.");
   const [busy, setBusy] = useState(false);
 
@@ -49,6 +90,20 @@ export default function Admin() {
       const data = await res.json();
       setQueue(Array.isArray(data) ? data : []);
       setStatus(`${Array.isArray(data) ? data.length : 0} candidates pending review, ranked by Diamond Score.`);
+
+      const headers = { "X-Admin-Token": adminToken };
+      const [sourcesRes, outcomesRes] = await Promise.all([
+        fetch(`${API_BASE}/admin/sources`, { headers }),
+        fetch(`${API_BASE}/admin/outcomes`, { headers }),
+      ]);
+      if (sourcesRes.ok) {
+        const sourceData = await sourcesRes.json();
+        setSources(Array.isArray(sourceData) ? sourceData : []);
+      }
+      if (outcomesRes.ok) {
+        const outcomeData = await outcomesRes.json();
+        setOutcomes(Array.isArray(outcomeData) ? outcomeData : []);
+      }
     } catch (err) {
       console.error(err);
       setStatus("Could not reach the API.");
@@ -168,6 +223,100 @@ export default function Admin() {
           </div>
         ))}
       </div>
+
+      {sources.length > 0 && (
+        <section className="max-w-5xl mx-auto mt-16">
+          <h2 className="text-2xl font-medium tracking-tight">Source Scoreboard</h2>
+          <p className="text-sm text-gray-500 mt-1 mb-4">
+            Incrementality per source: a high never-seen rate with a low 7-day growth ratio means
+            we surfaced something the internet wasn&apos;t going to deliver. Growth ≥3x = we frontran a blowup.
+          </p>
+          <div className="overflow-x-auto border border-gray-200 bg-white">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wider text-gray-500 border-b border-gray-200">
+                  <th className="p-3">Source</th>
+                  <th className="p-3">Type</th>
+                  <th className="p-3 text-right">Candidates</th>
+                  <th className="p-3 text-right">Rejected</th>
+                  <th className="p-3 text-right">Avg Diamond</th>
+                  <th className="p-3 text-right">Featured</th>
+                  <th className="p-3 text-right">Never-Seen %</th>
+                  <th className="p-3 text-right">Avg 7d Growth</th>
+                  <th className="p-3 text-right">Blowups (≥3x)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sources.map(s => (
+                  <tr key={`${s.creator_name}|${s.source_type}`} className="border-b border-gray-100">
+                    <td className="p-3 font-medium">{s.creator_name}</td>
+                    <td className="p-3 text-gray-500">{s.source_type}</td>
+                    <td className="p-3 text-right">{s.candidates}</td>
+                    <td className="p-3 text-right">{s.rejected}</td>
+                    <td className="p-3 text-right">{s.avg_diamond ?? "–"}</td>
+                    <td className="p-3 text-right">{s.picks_featured}</td>
+                    <td className="p-3 text-right">{s.never_seen_rate != null ? `${Math.round(s.never_seen_rate * 100)}%` : "–"}</td>
+                    <td className="p-3 text-right">{s.avg_growth_ratio != null ? `${s.avg_growth_ratio}x` : "–"}</td>
+                    <td className="p-3 text-right">{s.outcomes_checked > 0 ? `${s.blowups}/${s.outcomes_checked}` : "–"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {outcomes.length > 0 && (
+        <section className="max-w-5xl mx-auto mt-16">
+          <h2 className="text-2xl font-medium tracking-tight">Pick Outcomes</h2>
+          <p className="text-sm text-gray-500 mt-1 mb-4">
+            Score breakdown vs. 7-day view delta per featured pick — the raw data for tuning
+            the Diamond Score weights. Growth fills in once each pick passes the 7-day check.
+          </p>
+          <div className="overflow-x-auto border border-gray-200 bg-white">
+            <table className="w-full text-sm whitespace-nowrap">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wider text-gray-500 border-b border-gray-200">
+                  <th className="p-3">Featured</th>
+                  <th className="p-3">Title</th>
+                  <th className="p-3 text-right">Views@Feature</th>
+                  <th className="p-3 text-right">Views+7d</th>
+                  <th className="p-3 text-right">Growth</th>
+                  <th className="p-3 text-right">Never/Knew</th>
+                  <th className="p-3 text-right">Dia</th>
+                  <th className="p-3 text-right">Qua</th>
+                  <th className="p-3 text-right">Int</th>
+                  <th className="p-3 text-right">Rar</th>
+                  <th className="p-3 text-right">Ori</th>
+                  <th className="p-3 text-right">Out</th>
+                  <th className="p-3 text-right">Clk</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outcomes.map(o => (
+                  <tr key={o.hourly_id} className="border-b border-gray-100">
+                    <td className="p-3 text-gray-500">{o.publish_time.split(".")[0]}</td>
+                    <td className="p-3 font-medium max-w-xs overflow-hidden text-ellipsis" title={o.title ?? undefined}>
+                      {o.title || "(removed)"}
+                    </td>
+                    <td className="p-3 text-right">{compact(o.views_at_feature)}</td>
+                    <td className="p-3 text-right">{compact(o.views_after_7d)}</td>
+                    <td className="p-3 text-right font-bold">{o.growth_ratio != null ? `${o.growth_ratio}x` : "–"}</td>
+                    <td className="p-3 text-right">{o.never_seen}/{o.knew_already}</td>
+                    <td className="p-3 text-right font-bold">{num(o.diamond_score)}</td>
+                    <td className="p-3 text-right">{num(o.quality_score)}</td>
+                    <td className="p-3 text-right">{num(o.interestingness_score)}</td>
+                    <td className="p-3 text-right">{num(o.rarity_score)}</td>
+                    <td className="p-3 text-right">{num(o.originality_score)}</td>
+                    <td className="p-3 text-right">{num(o.outlier_score)}</td>
+                    <td className="p-3 text-right">{num(o.clickbait_penalty)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </main>
   );
 }

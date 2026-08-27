@@ -24,6 +24,38 @@ def dict_factory(cursor, row):
         d[col[0]] = row[idx]
     return d
 
+def fetch_outcomes(cursor):
+    """Every featured pick with its frozen score breakdown, view delta, and feedback tallies.
+    This is the dataset for judging incrementality and tuning Diamond Score weights."""
+    now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
+    cursor.execute(
+        "SELECT h.id AS hourly_id, h.publish_time, h.theme, h.views_at_feature, "
+        "h.views_after_7d, h.outcome_checked_at, "
+        "c.id AS candidate_id, c.title, c.creator_name, c.source_type, c.url, "
+        "c.diamond_score, c.quality_score, c.interestingness_score, c.rarity_score, "
+        "c.originality_score, c.outlier_score, c.clickbait_penalty, "
+        "c.trustworthiness_score, c.expertise_score, c.subscriber_count "
+        "FROM hourly_ones h LEFT JOIN content_candidates c ON c.id = h.candidate_id "
+        "WHERE h.publish_time <= ? ORDER BY h.publish_time DESC LIMIT 200",
+        (now_str,))
+    outcomes = cursor.fetchall()
+
+    cursor.execute("SELECT hourly_one_id, seen_before, COUNT(*) AS n FROM feedback "
+                   "GROUP BY hourly_one_id, seen_before")
+    feedback = {}
+    for row in cursor.fetchall():
+        feedback.setdefault(row['hourly_one_id'], {})[row['seen_before']] = row['n']
+
+    for outcome in outcomes:
+        tallies = feedback.get(outcome['hourly_id'], {})
+        outcome['never_seen'] = tallies.get('NEVER_SEEN', 0)
+        outcome['knew_already'] = tallies.get('KNEW_ALREADY', 0) + tallies.get('SEEN_BEFORE', 0)
+        at_feature = outcome['views_at_feature']
+        after = outcome['views_after_7d']
+        outcome['growth_ratio'] = round(after / at_feature, 2) if at_feature and after else None
+    return outcomes
+
+
 class APIHandler(BaseHTTPRequestHandler):
     def _set_headers(self, status_code=200):
         self.send_response(status_code)
@@ -137,6 +169,65 @@ class APIHandler(BaseHTTPRequestHandler):
                     "ORDER BY diamond_score DESC LIMIT ?",
                     (limit,))
                 self._send_json(cursor.fetchall())
+
+            elif parsed_path.path == '/admin/outcomes':
+                if not self._is_admin():
+                    self._send_json({"detail": "Admin token required"}, 403)
+                    return
+                self._send_json(fetch_outcomes(cursor))
+
+            elif parsed_path.path == '/admin/sources':
+                # Per-source scoreboard: is this source finding unnoticed diamonds,
+                # or content people would have seen anyway?
+                if not self._is_admin():
+                    self._send_json({"detail": "Admin token required"}, 403)
+                    return
+
+                cursor.execute(
+                    "SELECT creator_name, source_type, COUNT(*) AS candidates, "
+                    "AVG(diamond_score) AS avg_diamond, "
+                    "SUM(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END) AS rejected "
+                    "FROM content_candidates GROUP BY creator_name, source_type")
+                sources = {}
+                for row in cursor.fetchall():
+                    key = (row['creator_name'], row['source_type'])
+                    sources[key] = {
+                        "creator_name": row['creator_name'],
+                        "source_type": row['source_type'],
+                        "candidates": row['candidates'],
+                        "avg_diamond": round(row['avg_diamond'], 1) if row['avg_diamond'] is not None else None,
+                        "rejected": row['rejected'],
+                        "picks_featured": 0,
+                        "never_seen": 0,
+                        "knew_already": 0,
+                        "growth_ratios": [],
+                        "blowups": 0,
+                    }
+
+                for outcome in fetch_outcomes(cursor):
+                    key = (outcome['creator_name'], outcome['source_type'])
+                    if key not in sources:
+                        continue
+                    stats = sources[key]
+                    stats['picks_featured'] += 1
+                    stats['never_seen'] += outcome['never_seen']
+                    stats['knew_already'] += outcome['knew_already']
+                    ratio = outcome['growth_ratio']
+                    if ratio is not None:
+                        stats['growth_ratios'].append(ratio)
+                        if ratio >= 3.0:
+                            stats['blowups'] += 1
+
+                result = []
+                for stats in sources.values():
+                    ratios = stats.pop('growth_ratios')
+                    stats['avg_growth_ratio'] = round(sum(ratios) / len(ratios), 2) if ratios else None
+                    stats['outcomes_checked'] = len(ratios)
+                    total_feedback = stats['never_seen'] + stats['knew_already']
+                    stats['never_seen_rate'] = round(stats['never_seen'] / total_feedback, 2) if total_feedback else None
+                    result.append(stats)
+                result.sort(key=lambda s: (s['picks_featured'], s['candidates']), reverse=True)
+                self._send_json(result)
             else:
                 self._send_json({"detail": "Not found"}, 404)
         finally:
@@ -234,17 +325,18 @@ class APIHandler(BaseHTTPRequestHandler):
                     cursor.execute("UPDATE content_candidates SET status = 'PENDING_REVIEW' WHERE id = ?",
                                    (existing['candidate_id'],))
                     cursor.execute(
-                        "UPDATE hourly_ones SET candidate_id = ?, theme = ?, editorial_explanation = ? WHERE id = ?",
+                        "UPDATE hourly_ones SET candidate_id = ?, theme = ?, editorial_explanation = ?, "
+                        "views_at_feature = ?, views_after_7d = NULL, outcome_checked_at = NULL WHERE id = ?",
                         (candidate_id, candidate['theme'] or 'RANDOM',
-                         candidate['ai_explanation'], existing['id']))
+                         candidate['ai_explanation'], candidate['view_count'], existing['id']))
                     hourly_id = existing['id']
                 else:
                     hourly_id = str(uuid.uuid4())
                     cursor.execute(
-                        "INSERT INTO hourly_ones (id, publish_time, theme, candidate_id, editorial_explanation, is_bandit_winner) "
-                        "VALUES (?, ?, ?, ?, ?, 0)",
+                        "INSERT INTO hourly_ones (id, publish_time, theme, candidate_id, editorial_explanation, is_bandit_winner, views_at_feature) "
+                        "VALUES (?, ?, ?, ?, ?, 0, ?)",
                         (hourly_id, hour_start, candidate['theme'] or 'RANDOM',
-                         candidate_id, candidate['ai_explanation']))
+                         candidate_id, candidate['ai_explanation'], candidate['view_count']))
                 cursor.execute("UPDATE content_candidates SET status = 'PUBLISHED' WHERE id = ?", (candidate_id,))
                 conn.commit()
                 self._send_json({"hourly_id": hourly_id, "candidate_id": candidate_id,

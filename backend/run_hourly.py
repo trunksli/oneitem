@@ -41,6 +41,18 @@ def main():
             print("Scheduling failed:")
             traceback.print_exc()
 
+        try:
+            from app import database
+            from app.outcomes import check_pick_outcomes
+            db = database.SessionLocal()
+            try:
+                check_pick_outcomes(db)
+            finally:
+                db.close()
+        except Exception:
+            print("Outcome check failed:")
+            traceback.print_exc()
+
         # Sleep until just past the top of the next hour
         now = datetime.datetime.utcnow()
         next_hour = now.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(hours=1)

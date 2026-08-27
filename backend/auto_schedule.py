@@ -46,7 +46,8 @@ def schedule_top_candidate():
             publish_time=current_hour,
             theme=top_candidate.theme or models.Theme.RANDOM,
             candidate_id=top_candidate.id,
-            editorial_explanation=top_candidate.ai_explanation
+            editorial_explanation=top_candidate.ai_explanation,
+            views_at_feature=top_candidate.view_count  # snapshot for the 7-day incrementality delta
         )
         
         top_candidate.status = models.Status.PUBLISHED

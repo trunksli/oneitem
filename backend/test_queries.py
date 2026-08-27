@@ -1,0 +1,219 @@
+"""
+Tests for the database layer (app/queries.py) against a throwaway SQLite file.
+
+Runs without FastAPI, so it works on any Python that can import SQLAlchemy:
+
+    venv/Scripts/python.exe test_queries.py
+
+Covers the read shapes the frontend depends on plus the admin mutations, so a
+deployment can be sanity-checked without a browser.
+"""
+import datetime
+import os
+import sys
+import tempfile
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app import models, queries
+
+failures = []
+
+
+def check(label, condition, detail=""):
+    if condition:
+        print("  PASS  %s" % label)
+    else:
+        print("  FAIL  %s %s" % (label, detail))
+        failures.append(label)
+
+
+def seed(db):
+    now = datetime.datetime.utcnow()
+    hour_start = now.replace(minute=0, second=0, microsecond=0)
+
+    featured = models.ContentCandidate(
+        id="cand-featured", url="https://youtube.com/watch?v=aaa", source_id="aaa",
+        source_type=models.SourceType.YOUTUBE, title="A Featured Video",
+        creator_name="Practical Engineering", creator_url="https://youtube.com/c/pe",
+        description="d", thumbnail_url="https://img/1.jpg", view_count=1000,
+        subscriber_count=500000, upload_date=now - datetime.timedelta(days=30),
+        discovered_date=now, status=models.Status.PUBLISHED, theme=models.Theme.ENGINEERING,
+        diamond_score=80.0, quality_score=90.0, interestingness_score=85.0,
+        rarity_score=100.0, originality_score=70.0, outlier_score=0.0,
+        clickbait_penalty=0.0, trustworthiness_score=95.0,
+        ai_explanation="Because it is good.",
+    )
+    queued = models.ContentCandidate(
+        id="cand-queued", url="https://quanta.org/a", source_id="https://quanta.org/a",
+        source_type=models.SourceType.RSS, title="A Queued Article",
+        creator_name="Quanta Magazine", creator_url="https://quanta.org/feed",
+        description="d", thumbnail_url="", view_count=None, subscriber_count=None,
+        upload_date=now - datetime.timedelta(days=2), discovered_date=now,
+        status=models.Status.PENDING_REVIEW, theme=models.Theme.BIOSCIENCE,
+        diamond_score=88.0, quality_score=92.0, interestingness_score=90.0,
+        rarity_score=60.0, originality_score=85.0, outlier_score=0.0,
+        clickbait_penalty=5.0, trustworthiness_score=90.0,
+        ai_explanation="Rare and excellent.",
+    )
+    rejected = models.ContentCandidate(
+        id="cand-rejected", url="https://youtube.com/watch?v=bbb", source_id="bbb",
+        source_type=models.SourceType.YOUTUBE, title="A Rejected Video",
+        creator_name="Practical Engineering", creator_url="https://youtube.com/c/pe",
+        description="d", thumbnail_url="", view_count=10, subscriber_count=500000,
+        upload_date=now, discovered_date=now, status=models.Status.REJECTED,
+        theme=models.Theme.ENGINEERING, diamond_score=0.0, trustworthiness_score=10.0,
+    )
+    # Featured 8 days ago with a recorded outcome: 1000 -> 5000 views = 5x blowup
+    old_hour = hour_start - datetime.timedelta(days=8)
+    past = models.HourlyOne(
+        id="hourly-past", publish_time=old_hour, theme=models.Theme.ENGINEERING,
+        candidate_id="cand-featured", editorial_explanation="Because it is good.",
+        views_at_feature=1000, views_after_7d=5000, outcome_checked_at=now,
+    )
+    current = models.HourlyOne(
+        id="hourly-now", publish_time=hour_start, theme=models.Theme.ENGINEERING,
+        candidate_id="cand-featured", editorial_explanation="Because it is good.",
+        views_at_feature=1000,
+    )
+    db.add_all([featured, queued, rejected, past, current])
+    db.add(models.Comment(id="c1", content="hello", display_name="Ada",
+                          created_at=now - datetime.timedelta(minutes=5)))
+    db.add(models.Comment(id="c2", content="anon msg", display_name=None, created_at=now))
+    db.add(models.Feedback(id="f1", hourly_one_id="hourly-past",
+                           seen_before=models.SeenBefore.NEVER_SEEN, created_at=now))
+    db.add(models.Feedback(id="f2", hourly_one_id="hourly-past",
+                           seen_before=models.SeenBefore.KNEW_ALREADY, created_at=now))
+    db.commit()
+
+
+def main():
+    handle, path = tempfile.mkstemp(suffix=".db")
+    os.close(handle)
+    engine = create_engine("sqlite:///" + path, connect_args={"check_same_thread": False})
+    models.Base.metadata.create_all(bind=engine)
+    db = sessionmaker(bind=engine)()
+
+    try:
+        seed(db)
+
+        print("\n/hourly")
+        hourly = queries.get_hourly(db)
+        check("serves the current hour", hourly["hourly"]["id"] == "hourly-now")
+        check("not flagged stale", hourly["is_stale"] is False)
+        check("includes candidate title", hourly["candidate"]["title"] == "A Featured Video")
+        check("theme is a plain string", isinstance(hourly["hourly"]["theme"], str),
+              repr(hourly["hourly"]["theme"]))
+        check("publish_time is a plain string", isinstance(hourly["hourly"]["publish_time"], str))
+        check("exposes source_id for the embed", hourly["candidate"]["source_id"] == "aaa")
+
+        print("\n/comments")
+        comments = queries.get_comments(db)
+        check("returns today's comments", len(comments) == 2, str(len(comments)))
+        check("oldest first for display", comments[0]["content"] == "hello")
+        check("keeps display name", comments[0]["display_name"] == "Ada")
+        check("anonymous stays null", comments[1]["display_name"] is None)
+
+        created = queries.create_comment(db, "  a new one  ", "  Grace  ")
+        check("trims content", created["content"] == "a new one")
+        check("trims display name", created["display_name"] == "Grace")
+        try:
+            queries.create_comment(db, "   ")
+            check("rejects empty comment", False)
+        except ValueError:
+            check("rejects empty comment", True)
+        try:
+            queries.create_comment(db, "x" * 501)
+            check("rejects overlong comment", False)
+        except ValueError:
+            check("rejects overlong comment", True)
+
+        print("\n/feedback")
+        vote = queries.create_feedback(db, "hourly-now", "NEVER_SEEN")
+        check("records a vote", vote["seen_before"] == "NEVER_SEEN", str(vote))
+        try:
+            queries.create_feedback(db, "hourly-now", "BOGUS")
+            check("rejects bad enum value", False)
+        except ValueError:
+            check("rejects bad enum value", True)
+
+        print("\n/archive")
+        archive = queries.get_archive(db)
+        check("lists both past picks", len(archive) == 2, str(len(archive)))
+        check("newest first", archive[0]["hourly_id"] == "hourly-now")
+        check("joins candidate data", archive[0]["title"] == "A Featured Video")
+
+        print("\n/admin/queue")
+        queue = queries.get_queue(db)
+        check("only pending-review candidates", [c["id"] for c in queue] == ["cand-queued"],
+              str([c["id"] for c in queue]))
+        check("includes score breakdown", queue[0]["rarity_score"] == 60.0)
+
+        print("\n/admin/outcomes")
+        outcomes = queries.get_outcomes(db)
+        past_row = [o for o in outcomes if o["hourly_id"] == "hourly-past"][0]
+        check("computes growth ratio", past_row["growth_ratio"] == 5.0, str(past_row["growth_ratio"]))
+        check("tallies never-seen", past_row["never_seen"] == 1)
+        check("tallies knew-already", past_row["knew_already"] == 1)
+        check("carries frozen scores", past_row["quality_score"] == 90.0)
+        pending_row = [o for o in outcomes if o["hourly_id"] == "hourly-now"][0]
+        check("no ratio before the 7-day check", pending_row["growth_ratio"] is None)
+
+        print("\n/admin/sources")
+        stats = {s["creator_name"]: s for s in queries.get_source_stats(db)}
+        pe = stats["Practical Engineering"]
+        check("counts candidates per source", pe["candidates"] == 2, str(pe["candidates"]))
+        check("counts rejections", pe["rejected"] == 1, str(pe["rejected"]))
+        check("averages diamond score", pe["avg_diamond"] == 40.0, str(pe["avg_diamond"]))
+        check("counts featured picks", pe["picks_featured"] == 2, str(pe["picks_featured"]))
+        check("flags blowups", pe["blowups"] == 1, str(pe["blowups"]))
+        # 2 never-seen (one seeded on hourly-past, one cast above on hourly-now)
+        # against 1 knew-already, all on Practical Engineering picks.
+        check("never-seen rate", pe["never_seen_rate"] == 0.67, str(pe["never_seen_rate"]))
+        check("source with no picks still listed", stats["Quanta Magazine"]["picks_featured"] == 0)
+        check("avg growth ratio", pe["avg_growth_ratio"] == 5.0, str(pe["avg_growth_ratio"]))
+
+        print("\n/admin/schedule (override)")
+        result = queries.feature_candidate(db, "cand-queued")
+        check("reuses the current hour slot", result["hourly_id"] == "hourly-now")
+        db.expire_all()
+        check("displaced candidate returns to queue",
+              db.query(models.ContentCandidate).get("cand-featured").status == models.Status.PENDING_REVIEW)
+        check("new pick is published",
+              db.query(models.ContentCandidate).get("cand-queued").status == models.Status.PUBLISHED)
+        current = db.query(models.HourlyOne).get("hourly-now")
+        check("resets outcome tracking", current.views_after_7d is None and current.outcome_checked_at is None)
+        check("theme follows the new pick", current.theme == models.Theme.BIOSCIENCE)
+        check("hourly now serves the override",
+              queries.get_hourly(db)["candidate"]["title"] == "A Queued Article")
+
+        print("\n/admin/reject")
+        queries.reject_candidate(db, "cand-featured")
+        db.expire_all()
+        check("marks rejected",
+              db.query(models.ContentCandidate).get("cand-featured").status == models.Status.REJECTED)
+        for missing in ("feature_candidate", "reject_candidate"):
+            try:
+                getattr(queries, missing)(db, "does-not-exist")
+                check("%s raises NotFound" % missing, False)
+            except queries.NotFound:
+                check("%s raises NotFound" % missing, True)
+    finally:
+        db.close()
+        engine.dispose()
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+    print("")
+    if failures:
+        print("%d FAILED: %s" % (len(failures), ", ".join(failures)))
+        return 1
+    print("All query-layer checks passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

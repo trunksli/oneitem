@@ -10,14 +10,26 @@ except ImportError:
     YouTubeTranscriptApi = None
 
 def get_video_transcript(video_id: str) -> str:
-    """Fetches the transcript for a YouTube video."""
+    """Fetches the transcript for a YouTube video.
+
+    Supports both library generations: 0.6.x exposes the static
+    get_transcript() returning dicts, 1.x uses an instance .fetch()
+    returning snippet objects.
+    """
     if not YouTubeTranscriptApi:
-        return "Transcript extraction library not available."
+        return ""
     try:
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-        # Combine the text
-        full_text = " ".join([t['text'] for t in transcript_list])
-        return full_text
+        if hasattr(YouTubeTranscriptApi, "get_transcript"):
+            segments = YouTubeTranscriptApi.get_transcript(video_id)
+        else:
+            segments = YouTubeTranscriptApi().fetch(video_id)
+        parts = []
+        for segment in segments:
+            if isinstance(segment, dict):
+                parts.append(segment.get("text", ""))
+            else:
+                parts.append(getattr(segment, "text", ""))
+        return " ".join(parts)
     except Exception as e:
         print(f"Could not fetch transcript for {video_id}: {e}")
         return ""

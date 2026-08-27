@@ -165,7 +165,7 @@ export default function Home() {
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </div>
           <a
-            href="/archive"
+            href="/archive/"
             className="text-sm font-bold tracking-widest uppercase hover:text-gray-500 transition-colors"
           >
             Archive

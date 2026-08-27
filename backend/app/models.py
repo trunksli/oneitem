@@ -1,7 +1,8 @@
 import uuid
 import enum
 from sqlalchemy import Column, String, Integer, BigInteger, Text, DateTime, Boolean, ForeignKey, Float, Enum
-from sqlalchemy.ext.declarative import declarative_base
+# sqlalchemy.orm (not sqlalchemy.ext.declarative) so this works on 1.4 and 2.x alike
+from sqlalchemy.orm import declarative_base
 from datetime import datetime
 
 Base = declarative_base()

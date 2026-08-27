@@ -1,0 +1,60 @@
+# Render Blueprint for ONE.
+#
+# Three pieces: a Python API (which also runs the hourly scheduler in-process),
+# a static Next.js site, and a Postgres database.
+#
+# Verify against current Render docs before relying on this file — the Blueprint
+# schema changes over time. DEPLOY.md documents the equivalent manual dashboard
+# setup, which always works.
+
+services:
+  # ---------- Backend API ----------
+  - type: web
+    name: one-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /health
+    envVars:
+      # Runs the hourly pipeline/scheduler as a thread in this service, so no
+      # paid Background Worker is needed. Requires --workers 1 (above).
+      - key: RUN_SCHEDULER
+        value: "1"
+      - key: PIPELINE_EVERY_HOURS
+        value: "6"
+      - key: OUTCOME_CHECK_DAYS
+        value: "7"
+      # Set these in the Render dashboard (never commit secrets).
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      # Comma-separated frontend origin(s), e.g. https://one-web.onrender.com
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Render generates this; copy it from the dashboard to log into /admin/
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: one-db
+          property: connectionString
+
+  # ---------- Frontend (static export) ----------
+  - type: web
+    name: one-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./out
+    envVars:
+      # Baked in at BUILD time, so changing it requires a redeploy.
+      # Set to the API service's URL, e.g. https://one-api.onrender.com
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
+
+databases:
+  - name: one-db
+    plan: free

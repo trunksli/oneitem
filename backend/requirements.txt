@@ -1,10 +1,14 @@
-# Pinned to versions compatible with the current Python 3.6 environment.
-# When upgrading to Python 3.12+, bump these (note: youtube-transcript-api >= 1.0
-# changed its interface from the static get_transcript() to an instance-based API).
-requests==2.27.1
-SQLAlchemy==1.4.52
-python-dotenv==0.20.0
-youtube-transcript-api==0.6.2
-fastapi==0.68.1
-uvicorn==0.16.0
-pydantic==1.7.4
+# Minimum-version floors rather than exact pins: this deploys to whatever
+# modern Python the host provides (Render defaults to a current 3.x), and
+# floors avoid build failures from a pinned patch release being unavailable.
+# Pin exact versions here once the deployment is stable.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+SQLAlchemy>=2.0
+pydantic>=2.6
+requests>=2.31
+python-dotenv>=1.0
+youtube-transcript-api>=0.6.2
+
+# Postgres driver (unused when DATABASE_URL is unset and SQLite is the fallback)
+psycopg2-binary>=2.9.9

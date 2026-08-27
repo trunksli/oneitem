@@ -116,6 +116,11 @@ archive and the 7-day view deltas would reset on every deploy. Use Postgres.
 the token (every admin endpoint returns 403, and the endpoints are disabled
 outright when `ADMIN_TOKEN` is unset), but it is not a secret page.
 
+**If the Python build fails on a wheel** (usually `psycopg2-binary` on a
+brand-new interpreter), pin the runtime: add `PYTHON_VERSION` = `3.12.8` to the
+API service's environment variables and redeploy. `requirements.txt` uses
+minimum-version floors, so it otherwise installs whatever is current.
+
 **The chat is unmoderated and public.** There is no rate limiting, spam
 filtering, or delete tooling yet. Worth knowing before sharing the link widely.
 

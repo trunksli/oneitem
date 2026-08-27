@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from app import database, models
 from app.ingestion import ingest_seed_channels
+from app.rss_ingestion import ingest_feeds
 from app.ai_scoring import score_candidate
 
 load_dotenv()
@@ -21,7 +22,11 @@ def run_pipeline():
     try:
         print("1. Starting ingestion phase...")
         ingest_seed_channels(db, SEED_CHANNELS)
-        
+
+        print("1b. Ingesting RSS feeds...")
+        ingest_feeds(db)
+
+
         print("2. Starting scoring phase...")
         # Score all pending candidates
         pending_candidates = db.query(models.ContentCandidate).filter(

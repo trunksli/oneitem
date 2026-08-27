@@ -4,10 +4,18 @@ import datetime
 import uuid
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
+
+import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 MAX_BODY_BYTES = 16 * 1024
 MAX_COMMENT_LENGTH = 500
+MAX_DISPLAY_NAME_LENGTH = 40
 VALID_SEEN_BEFORE = {"NEVER_SEEN", "SEEN_BEFORE", "KNEW_ALREADY"}
 
 def dict_factory(cursor, row):
@@ -44,6 +52,11 @@ class APIHandler(BaseHTTPRequestHandler):
         if not isinstance(data, dict):
             return None, (400, "Expected a JSON object")
         return data, None
+
+    def _is_admin(self):
+        """Admin endpoints require ADMIN_TOKEN to be configured AND presented."""
+        token = os.getenv("ADMIN_TOKEN")
+        return bool(token) and self.headers.get('X-Admin-Token') == token
 
     def do_OPTIONS(self):
         self._set_headers(200)
@@ -93,6 +106,37 @@ class APIHandler(BaseHTTPRequestHandler):
                 comments = cursor.fetchall()
                 comments.reverse()
                 self._send_json(comments)
+
+            elif parsed_path.path == '/archive':
+                # Past Diamonds: every previously featured item, newest first.
+                now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
+                cursor.execute(
+                    "SELECT h.id AS hourly_id, h.publish_time, h.theme, h.editorial_explanation, "
+                    "c.id AS candidate_id, c.title, c.creator_name, c.creator_url, c.url, "
+                    "c.thumbnail_url, c.source_type, c.source_id "
+                    "FROM hourly_ones h LEFT JOIN content_candidates c ON c.id = h.candidate_id "
+                    "WHERE h.publish_time <= ? ORDER BY h.publish_time DESC LIMIT 100",
+                    (now_str,))
+                self._send_json(cursor.fetchall())
+
+            elif parsed_path.path == '/admin/queue':
+                if not self._is_admin():
+                    self._send_json({"detail": "Admin token required"}, 403)
+                    return
+                query = parse_qs(parsed_path.query)
+                try:
+                    limit = min(50, max(1, int(query.get('limit', ['10'])[0])))
+                except ValueError:
+                    limit = 10
+                cursor.execute(
+                    "SELECT id, title, creator_name, url, source_type, theme, view_count, "
+                    "subscriber_count, upload_date, diamond_score, quality_score, "
+                    "interestingness_score, rarity_score, originality_score, outlier_score, "
+                    "clickbait_penalty, trustworthiness_score, ai_explanation "
+                    "FROM content_candidates WHERE status = 'PENDING_REVIEW' "
+                    "ORDER BY diamond_score DESC LIMIT ?",
+                    (limit,))
+                self._send_json(cursor.fetchall())
             else:
                 self._send_json({"detail": "Not found"}, 404)
         finally:
@@ -115,15 +159,17 @@ class APIHandler(BaseHTTPRequestHandler):
                 self._send_json({"detail": f"Comment too long (max {MAX_COMMENT_LENGTH} chars)"}, 400)
                 return
 
+            display_name = (data.get('display_name') or "").strip()[:MAX_DISPLAY_NAME_LENGTH] or None
+
             conn = sqlite3.connect('sql_app_v2.db')
             cursor = conn.cursor()
             try:
                 c_id = str(uuid.uuid4())
                 created_at = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
-                cursor.execute("INSERT INTO comments (id, content, created_at) VALUES (?, ?, ?)",
-                               (c_id, content, created_at))
+                cursor.execute("INSERT INTO comments (id, content, display_name, created_at) VALUES (?, ?, ?, ?)",
+                               (c_id, content, display_name, created_at))
                 conn.commit()
-                self._send_json({"id": c_id, "content": content}, 201)
+                self._send_json({"id": c_id, "content": content, "display_name": display_name}, 201)
             finally:
                 conn.close()
 
@@ -152,6 +198,84 @@ class APIHandler(BaseHTTPRequestHandler):
                     (f_id, hourly_one_id, seen_before, created_at))
                 conn.commit()
                 self._send_json({"id": f_id, "seen_before": seen_before}, 201)
+            finally:
+                conn.close()
+
+        elif parsed_path.path == '/admin/schedule':
+            # Phase A override: feature this candidate for the CURRENT hour,
+            # replacing whatever the auto-scheduler picked.
+            if not self._is_admin():
+                self._send_json({"detail": "Admin token required"}, 403)
+                return
+            data, error = self._read_json_body()
+            if error:
+                self._send_json({"detail": error[1]}, error[0])
+                return
+            candidate_id = data.get('candidate_id')
+            if not candidate_id or not isinstance(candidate_id, str):
+                self._send_json({"detail": "candidate_id is required"}, 400)
+                return
+
+            conn = sqlite3.connect('sql_app_v2.db')
+            conn.row_factory = dict_factory
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT * FROM content_candidates WHERE id = ?", (candidate_id,))
+                candidate = cursor.fetchone()
+                if not candidate:
+                    self._send_json({"detail": "Candidate not found"}, 404)
+                    return
+
+                hour_start = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:00:00.000000")
+                cursor.execute("SELECT * FROM hourly_ones WHERE publish_time = ?", (hour_start,))
+                existing = cursor.fetchone()
+                if existing:
+                    # The displaced candidate goes back into the review pool
+                    cursor.execute("UPDATE content_candidates SET status = 'PENDING_REVIEW' WHERE id = ?",
+                                   (existing['candidate_id'],))
+                    cursor.execute(
+                        "UPDATE hourly_ones SET candidate_id = ?, theme = ?, editorial_explanation = ? WHERE id = ?",
+                        (candidate_id, candidate['theme'] or 'RANDOM',
+                         candidate['ai_explanation'], existing['id']))
+                    hourly_id = existing['id']
+                else:
+                    hourly_id = str(uuid.uuid4())
+                    cursor.execute(
+                        "INSERT INTO hourly_ones (id, publish_time, theme, candidate_id, editorial_explanation, is_bandit_winner) "
+                        "VALUES (?, ?, ?, ?, ?, 0)",
+                        (hourly_id, hour_start, candidate['theme'] or 'RANDOM',
+                         candidate_id, candidate['ai_explanation']))
+                cursor.execute("UPDATE content_candidates SET status = 'PUBLISHED' WHERE id = ?", (candidate_id,))
+                conn.commit()
+                self._send_json({"hourly_id": hourly_id, "candidate_id": candidate_id,
+                                 "publish_time": hour_start}, 201)
+            finally:
+                conn.close()
+
+        elif parsed_path.path == '/admin/reject':
+            if not self._is_admin():
+                self._send_json({"detail": "Admin token required"}, 403)
+                return
+            data, error = self._read_json_body()
+            if error:
+                self._send_json({"detail": error[1]}, error[0])
+                return
+            candidate_id = data.get('candidate_id')
+            if not candidate_id or not isinstance(candidate_id, str):
+                self._send_json({"detail": "candidate_id is required"}, 400)
+                return
+
+            conn = sqlite3.connect('sql_app_v2.db')
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "UPDATE content_candidates SET status = 'REJECTED', admin_notes = 'Rejected by admin' WHERE id = ?",
+                    (candidate_id,))
+                conn.commit()
+                if cursor.rowcount == 0:
+                    self._send_json({"detail": "Candidate not found"}, 404)
+                else:
+                    self._send_json({"id": candidate_id, "status": "REJECTED"})
             finally:
                 conn.close()
         else:

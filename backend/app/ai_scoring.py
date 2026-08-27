@@ -81,20 +81,23 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     if candidate.source_type == models.SourceType.YOUTUBE:
         transcript = get_video_transcript(candidate.source_id)
         candidate.transcript = transcript
+        content_kind = "video"
     else:
-        transcript = ""
+        # RSS/web candidates store their extracted article text in the same slot
+        transcript = candidate.transcript or ""
+        content_kind = "article"
         
     # Prepare the prompt
     prompt = f"""
     You are an expert content curator for a service called ONE. 
     Our goal is to find exactly one exceptional piece of content per hour. We are looking for "diamonds in the rough" - highly interesting, trustworthy, non-clickbait content by obsessive experts.
     
-    Evaluate the following video candidate.
-    
+    Evaluate the following {content_kind} candidate.
+
     Title: {candidate.title}
-    Channel: {candidate.creator_name}
+    Creator/Publication: {candidate.creator_name}
     Description: {(candidate.description or "")[:500]}...
-    Transcript: {(transcript or "")[:3000]}...
+    {"Transcript" if content_kind == "video" else "Article text"}: {(transcript or "")[:3000]}...
     
     Please provide a JSON response with the following keys:
     - quality_score: Integer 0-100. How well-made, substantive, and worthwhile is this?
@@ -154,7 +157,11 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     views = candidate.view_count or 0
     subs = candidate.subscriber_count or 0
     
-    if views < 5000:
+    if candidate.view_count is None:
+        # Articles/RSS have no view data - unknown reach is not the same as
+        # obscure, so use a neutral rarity instead of maxing it out.
+        rarity = 60
+    elif views < 5000:
         rarity = 100
     elif views < 50000:
         rarity = 85

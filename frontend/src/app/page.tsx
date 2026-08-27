@@ -25,12 +25,14 @@ interface HourlyResponse {
 interface Comment {
   id: string;
   content: string;
+  display_name?: string | null;
 }
 
 export default function Home() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
+  const [displayName, setDisplayName] = useState("");
 
   const [hourlyOne, setHourlyOne] = useState<HourlyResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -65,6 +67,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    try {
+      setDisplayName(localStorage.getItem("one_display_name") || "");
+    } catch { /* storage unavailable (private mode etc.) - stay anonymous */ }
+
     fetchHourly();
     fetchComments();
 
@@ -78,6 +84,13 @@ export default function Home() {
     };
   }, [fetchHourly, fetchComments]);
 
+  const handleNameChange = (name: string) => {
+    setDisplayName(name);
+    try {
+      localStorage.setItem("one_display_name", name);
+    } catch { /* storage unavailable - name just won't persist */ }
+  };
+
   const handleSendComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim()) return;
@@ -89,7 +102,7 @@ export default function Home() {
       const res = await fetch(`${API_BASE}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: commentText })
+        body: JSON.stringify({ content: commentText, display_name: displayName.trim() || null })
       });
       if (res.ok) {
         fetchComments();
@@ -151,6 +164,12 @@ export default function Home() {
           <div className="text-sm font-medium tracking-wide text-gray-500 uppercase hidden sm:block">
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </div>
+          <a
+            href="/archive"
+            className="text-sm font-bold tracking-widest uppercase hover:text-gray-500 transition-colors"
+          >
+            Archive
+          </a>
           <button
             onClick={() => setIsChatOpen(true)}
             className="flex items-center gap-2 text-sm font-bold tracking-widest uppercase hover:text-gray-500 transition-colors"
@@ -264,14 +283,22 @@ export default function Home() {
           ) : (
             comments.map((c, i) => (
               <div key={c.id ?? i} className="bg-gray-100 p-4 rounded-lg text-sm text-gray-800">
-                <div className="font-bold text-xs text-gray-500 mb-1">Anonymous User</div>
+                <div className="font-bold text-xs text-gray-500 mb-1">{c.display_name || "Anonymous"}</div>
                 {c.content}
               </div>
             ))
           )}
         </div>
 
-        <div className="p-4 border-t border-gray-200 bg-white">
+        <div className="p-4 border-t border-gray-200 bg-white space-y-2">
+          <input
+            type="text"
+            value={displayName}
+            maxLength={40}
+            onChange={(e) => handleNameChange(e.target.value)}
+            placeholder="Your name (optional)"
+            className="w-full bg-gray-50 border border-gray-200 rounded-full px-4 py-1.5 text-xs outline-none focus:ring-2 focus:ring-black"
+          />
           <form onSubmit={handleSendComment} className="flex gap-2">
             <input
               type="text"

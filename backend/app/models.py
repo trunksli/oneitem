@@ -104,6 +104,7 @@ class Comment(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey("users.id"))
+    display_name = Column(String(40), nullable=True)  # user-chosen pseudonym, no account needed
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     # The comment thread persists across content changes, but we track when it was posted

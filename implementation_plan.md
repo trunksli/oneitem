@@ -18,6 +18,7 @@ We have built a functional MVP focusing on backend ingestion, AI scoring, and a 
 ### 2.1 Backend & Ingestion Engine (Python)
 *   **Database:** SQLite (`sql_app_v2.db`) used for rapid MVP prototyping, interfaced via SQLAlchemy.
 *   **Ingestion Script (`ingestion.py`):** Uses the YouTube Data API (via direct HTTP requests to avoid Python 3.6 library conflicts) to pull the latest videos from a list of high-quality "seed" channels.
+*   **RSS Connector (`rss_ingestion.py`, Phase B):** Ingests articles from RSS/Atom feeds (Quanta, Aeon, Nautilus by default — edit `SEED_FEEDS`), parsing with the stdlib and extracting readable article text into the `transcript` field for scoring. Articles get a neutral rarity score (no view data). TikTok/Instagram are deliberately excluded (no public API; scraping violates ToS) — planned as user-submitted embeds in Phase C.
 *   **AI Scoring Pipeline (`ai_scoring.py`):** Uses Gemini via REST (model set by the `GEMINI_MODEL` env var). Scores from the LLM are validated and clamped to 0-100; if the API key is missing, scoring is skipped unless `ALLOW_MOCK_SCORING=1` explicitly opts into mock data.
     *   It extracts transcripts and evaluates content based on: Quality, Interestingness, Rarity, Originality, and Clickbait (Penalty).
     *   **Viral Outlier Score:** We implemented a hybrid calculation that checks the video's views against the channel's subscriber count. If a video is recent (under 14 days old) and has a view-to-subscriber ratio > 3x, it receives a massive score bonus. This bubbles potential "pre-viral" hits to the top.
@@ -30,7 +31,9 @@ We have built a functional MVP focusing on backend ingestion, AI scoring, and a 
 *   **Minimalist UI (`page.tsx`):** A clean, distraction-free interface showing only the current hour's featured content, its metadata, and the AI-generated editorial explanation.
 *   **Playable Media:** Clicking the thumbnail plays YouTube content in an embedded player (non-YouTube sources open in a new tab). The page re-checks `/hourly` every minute so an open tab rolls over to the new hour automatically.
 *   **Feedback Mechanism:** Large buttons asking "Never Seen It" vs "I Knew This" post to `/feedback` (stored against the current `HourlyOne`) and show a thank-you state.
-*   **Side-Panel Chat:** A persistent community chat that slides in from the right. It allows users to discuss the current content. The chat is a "Daily Lobby": the API only returns comments posted since midnight (UTC), so it clears daily.
+*   **Side-Panel Chat:** A persistent community chat that slides in from the right. It allows users to discuss the current content. The chat is a "Daily Lobby": the API only returns comments posted since midnight (UTC), so it clears daily. Users can set an optional display name (stored in `localStorage`, sent with each comment — no account needed).
+*   **Archive Page (`/archive`):** "Past Diamonds" — every previously featured item, newest first, linking out to the original content.
+*   **Admin Review Queue (`/admin`, Phase A):** Token-gated dashboard (set `ADMIN_TOKEN` in `.env`, sent as the `X-Admin-Token` header) showing the ranked `PENDING_REVIEW` queue with full score breakdowns. "Feature Now" overrides the current hour's `HourlyOne` (the displaced pick returns to the queue); "Reject" removes a candidate. The auto-scheduler still covers unattended hours.
 
 ---
 
@@ -48,14 +51,12 @@ The core entities in the SQLite database:
 
 The following features are architected conceptually but are **NOT yet implemented**. Future development should prioritize these items.
 
-### Phase A: Admin Review Queue (Manual Curation)
-*   Instead of auto-scheduling, build an Admin Dashboard.
-*   For each upcoming hour, the system should present a **ranked list of the top 5 candidates** alongside their Diamond/Outlier scores.
-*   The admin can review the AI's suggestions and manually select (override) which item becomes the `HourlyOne`.
+### Phase A: Admin Review Queue — DONE (MVP version)
+*   Implemented as a single ranked queue with a current-hour override at `/admin` (see 2.2). Possible follow-up: per-upcoming-hour slots with pre-assigned picks.
 
-### Phase B: Expanded Sourcing
-*   Expand the ingestion engine beyond YouTube.
-*   Write connectors to scrape and score: TikToks, Instagram Reels, long-form blogs, news articles, and obscure websites. 
+### Phase B: Expanded Sourcing — PARTIALLY DONE
+*   RSS/Atom connector for blogs, magazines, and news is live (`rss_ingestion.py`).
+*   Remaining: TikToks and Instagram Reels have no public content API and scraping violates their ToS — accept them as user-submitted links (Phase C) rendered via official embeds instead.
 
 ### Phase C: User System & Community Submissions
 *   Create a robust User System (authentication, profiles).

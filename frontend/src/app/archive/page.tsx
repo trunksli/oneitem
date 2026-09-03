@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { API_BASE } from '@/lib/api';
+import ApiWarning from '@/components/api-warning';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface ArchiveEntry {
   hourly_id: string;
@@ -44,15 +46,17 @@ export default function Archive() {
 
   return (
     <main className="min-h-screen" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
+      <ApiWarning />
+
 
       <header
         className="w-full flex justify-between items-center gap-4 px-6 md:px-10 py-4"
         style={{ borderBottom: '2px solid var(--rule)' }}
       >
-        <a href="/" className="display text-2xl font-bold tracking-tight leading-none" style={{ color: 'var(--ink)', textDecoration: 'none' }}>
+        <Link href="/" className="display text-2xl font-bold tracking-tight leading-none" style={{ color: 'var(--ink)', textDecoration: 'none' }}>
           ONE
-        </a>
-        <a href="/" className="label link-accent">Now Playing &#8594;</a>
+        </Link>
+        <Link href="/" className="label link-accent">Now Playing &#8594;</Link>
       </header>
 
       <div className="mx-auto px-6 md:px-10 py-10 md:py-16" style={{ maxWidth: 'var(--content-max)' }}>

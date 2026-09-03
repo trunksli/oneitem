@@ -70,6 +70,12 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/status")
+def status(db: Session = Depends(get_db)):
+    """Operational snapshot for diagnosing a deployment. Contains no secrets."""
+    return queries.get_status(db)
+
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to ONE API"}

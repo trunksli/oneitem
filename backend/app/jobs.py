@@ -20,6 +20,7 @@ from . import database, models
 from .ai_scoring import score_candidate
 from .ingestion import ingest_seed_channels
 from .outcomes import check_pick_outcomes
+from .queries import promote_next_pick
 from .rss_ingestion import ingest_feeds
 
 PIPELINE_EVERY_HOURS = int(os.getenv("PIPELINE_EVERY_HOURS", "6"))
@@ -59,51 +60,16 @@ def refresh_candidates(db):
 
 
 def schedule_top_candidate(db):
-    """Promote the best pending candidate into the current hour's slot."""
-    now = datetime.datetime.utcnow()
-    current_hour = now.replace(minute=0, second=0, microsecond=0)
+    """Promote the best pending candidate into the current hour's slot.
 
-    existing = db.query(models.HourlyOne).filter(
-        models.HourlyOne.publish_time == current_hour).first()
-    if existing:
-        print("Already have an HourlyOne for %s" % current_hour)
-        return None
-
-    # Theme rotation: prefer a top candidate whose theme differs from the
-    # previous hour's, so the same theme doesn't run back-to-back all day.
-    previous = db.query(models.HourlyOne).filter(
-        models.HourlyOne.publish_time < current_hour
-    ).order_by(models.HourlyOne.publish_time.desc()).first()
-
-    pending = db.query(models.ContentCandidate).filter(
-        models.ContentCandidate.status == models.Status.PENDING_REVIEW)
-
-    top_candidate = None
-    if previous is not None and previous.theme:
-        top_candidate = pending.filter(
-            models.ContentCandidate.theme != previous.theme
-        ).order_by(models.ContentCandidate.diamond_score.desc()).first()
-
-    # Fall back to the overall best if every remaining candidate shares the theme
-    if top_candidate is None:
-        top_candidate = pending.order_by(
-            models.ContentCandidate.diamond_score.desc()).first()
-
-    if top_candidate is None:
-        print("No pending review candidates available to schedule.")
-        return None
-
-    hourly = models.HourlyOne(
-        publish_time=current_hour,
-        theme=top_candidate.theme or models.Theme.RANDOM,
-        candidate_id=top_candidate.id,
-        editorial_explanation=top_candidate.ai_explanation,
-        views_at_feature=top_candidate.view_count,  # snapshot for the 7-day delta
-    )
-    top_candidate.status = models.Status.PUBLISHED
-    db.add(hourly)
-    db.commit()
-    print("Promoted '%s' (Score: %s) to HourlyOne." % (top_candidate.title, top_candidate.diamond_score))
+    Thin wrapper: the logic lives in queries.promote_next_pick so that the API can
+    also schedule lazily on read, without pulling the ingestion stack into a request.
+    """
+    hourly = promote_next_pick(db)
+    if hourly is None:
+        print("Nothing to schedule: the hour is filled or no candidates are pending review.")
+    else:
+        print("Promoted candidate %s to HourlyOne for %s." % (hourly.candidate_id, hourly.publish_time))
     return hourly
 
 

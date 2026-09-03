@@ -9,6 +9,7 @@ Covers the read shapes the frontend depends on plus the admin mutations, so a
 deployment can be sanity-checked without a browser.
 """
 import datetime
+import json
 import os
 import sys
 import tempfile
@@ -19,6 +20,10 @@ from sqlalchemy.orm import sessionmaker
 from app import models, queries
 
 failures = []
+
+
+def hour_now():
+    return datetime.datetime.utcnow().replace(minute=0, second=0, microsecond=0)
 
 
 def check(label, condition, detail=""):
@@ -187,6 +192,56 @@ def main():
         check("theme follows the new pick", current.theme == models.Theme.BIOSCIENCE)
         check("hourly now serves the override",
               queries.get_hourly(db)["candidate"]["title"] == "A Queued Article")
+
+        print("\nlazy scheduling")
+        # Clear this hour, leave a scored candidate waiting, and confirm a plain
+        # read fills the slot -- the free-tier case where no scheduler thread ran.
+        db.query(models.HourlyOne).filter(models.HourlyOne.id == "hourly-now").delete()
+        db.commit()
+        waiting = db.query(models.ContentCandidate).get("cand-featured")
+        waiting.status = models.Status.PENDING_REVIEW
+        db.commit()
+
+        os.environ["LAZY_SCHEDULING"] = "1"
+        result = queries.get_hourly(db)
+        check("read fills the empty hour", result["is_stale"] is False, str(result["is_stale"]))
+        check("features the waiting candidate", result["candidate"]["title"] == "A Featured Video")
+        check("candidate is marked published",
+              db.query(models.ContentCandidate).get("cand-featured").status == models.Status.PUBLISHED)
+        check("snapshots views at feature",
+              db.query(models.HourlyOne).filter(
+                  models.HourlyOne.publish_time == hour_now()).first().views_at_feature == 1000)
+
+        # A second read must not create a duplicate for the same hour.
+        before = db.query(models.HourlyOne).count()
+        queries.get_hourly(db)
+        check("second read does not double-schedule",
+              db.query(models.HourlyOne).count() == before, str(db.query(models.HourlyOne).count()))
+
+        # With nothing left to promote it must fall back rather than raise.
+        db.query(models.HourlyOne).filter(models.HourlyOne.publish_time == hour_now()).delete()
+        db.query(models.ContentCandidate).update({models.ContentCandidate.status: models.Status.REJECTED})
+        db.commit()
+        fallback = queries.get_hourly(db)
+        check("falls back to the latest pick when nothing is pending", fallback["is_stale"] is True)
+
+        os.environ["LAZY_SCHEDULING"] = "0"
+        db.query(models.HourlyOne).filter(models.HourlyOne.publish_time == hour_now()).delete()
+        db.commit()
+        disabled = queries.get_hourly(db)
+        check("respects LAZY_SCHEDULING=0", disabled["is_stale"] is True)
+        os.environ.pop("LAZY_SCHEDULING", None)
+
+        print("\n/status")
+        st = queries.get_status(db)
+        check("reports config block", "database" in st["config"])
+        check("reports candidates by status", isinstance(st["content"]["candidates_by_status"], dict))
+        check("reports ready_to_feature", isinstance(st["content"]["ready_to_feature"], int))
+        check("reports schedule block", "current_hour_filled" in st["schedule"])
+        check("leaks no secrets", "DATABASE_URL" not in json.dumps(st)
+              and "GEMINI_API_KEY" not in json.dumps(st))
+        check("flags lazy scheduling state",
+              isinstance(st["config"]["lazy_scheduling_enabled"], bool))
 
         print("\n/admin/reject")
         queries.reject_candidate(db, "cand-featured")

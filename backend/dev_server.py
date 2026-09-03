@@ -78,6 +78,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/health":
                 self._send({"status": "ok"})
+            elif path == "/status":
+                self._send(queries.get_status(db))
             elif path == "/":
                 self._send({"message": "Welcome to ONE API (dev server)"})
             elif path == "/hourly":

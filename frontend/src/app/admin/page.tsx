@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
+import { API_BASE } from '@/lib/api';
+import ApiWarning from '@/components/api-warning';
+import { usePersistentState } from '@/lib/use-persistent-state';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface QueueCandidate {
   id: string;
@@ -71,7 +74,7 @@ const cell = { padding: '10px 12px', borderBottom: '1px solid var(--line)' } as 
 const headCell = { padding: '10px 12px', borderBottom: '1px solid var(--line-strong)', textAlign: 'left' as const };
 
 export default function Admin() {
-  const [token, setToken] = useState("");
+  const [token, setToken] = usePersistentState("one_admin_token");
   const [queue, setQueue] = useState<QueueCandidate[]>([]);
   const [sources, setSources] = useState<SourceStats[]>([]);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
@@ -111,20 +114,17 @@ export default function Admin() {
     }
   }, []);
 
+  // Load once on mount if a token was already stored; the ref keeps typing in the
+  // token field from re-triggering a fetch on every keystroke.
+  const loadedOnce = useRef(false);
   useEffect(() => {
-    let stored = "";
-    try {
-      stored = localStorage.getItem("one_admin_token") || "";
-    } catch { /* storage unavailable */ }
-    setToken(stored);
-    if (stored) loadQueue(stored);
-  }, [loadQueue]);
+    if (loadedOnce.current || !token) return;
+    loadedOnce.current = true;
+    loadQueue(token);
+  }, [token, loadQueue]);
 
   const handleTokenSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      localStorage.setItem("one_admin_token", token);
-    } catch { /* storage unavailable */ }
     loadQueue(token);
   };
 
@@ -156,15 +156,17 @@ export default function Admin() {
 
   return (
     <main className="min-h-screen" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
+      <ApiWarning />
+
 
       <header
         className="w-full flex justify-between items-center gap-4 px-6 md:px-10 py-4"
         style={{ borderBottom: '2px solid var(--rule)' }}
       >
-        <a href="/" className="display text-2xl font-bold tracking-tight leading-none" style={{ color: 'var(--ink)', textDecoration: 'none' }}>
+        <Link href="/" className="display text-2xl font-bold tracking-tight leading-none" style={{ color: 'var(--ink)', textDecoration: 'none' }}>
           ONE
-        </a>
-        <a href="/" className="label link-accent">Now Playing &#8594;</a>
+        </Link>
+        <Link href="/" className="label link-accent">Now Playing &#8594;</Link>
       </header>
 
       <div className="mx-auto px-6 md:px-10 py-10" style={{ maxWidth: 1100 }}>

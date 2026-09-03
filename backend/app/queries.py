@@ -8,6 +8,10 @@ Every function returns plain JSON-ready values (strings, numbers, dicts) rather
 than ORM objects, so serialization behaves identically across library versions.
 """
 import datetime
+import os
+
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 
 from . import models
 
@@ -47,14 +51,84 @@ def _candidate_summary(candidate):
 
 # ---------------------------------------------------------------- public reads
 
+def promote_next_pick(db):
+    """Fill the current hour's slot with the best pending candidate.
+
+    Pure database work -- candidates are already ingested and scored, so this makes
+    no network calls and is cheap enough to run inside a request (see get_hourly).
+    Returns the new HourlyOne, or None if the hour is already filled or nothing is
+    waiting for review.
+    """
+    now = datetime.datetime.utcnow()
+    current_hour = now.replace(minute=0, second=0, microsecond=0)
+
+    existing = db.query(models.HourlyOne).filter(
+        models.HourlyOne.publish_time == current_hour).first()
+    if existing is not None:
+        return None
+
+    # Theme rotation: prefer a top candidate whose theme differs from the previous
+    # hour's, so the same theme does not run back-to-back all day.
+    previous = db.query(models.HourlyOne).filter(
+        models.HourlyOne.publish_time < current_hour
+    ).order_by(models.HourlyOne.publish_time.desc()).first()
+
+    pending = db.query(models.ContentCandidate).filter(
+        models.ContentCandidate.status == models.Status.PENDING_REVIEW)
+
+    top_candidate = None
+    if previous is not None and previous.theme:
+        top_candidate = pending.filter(
+            models.ContentCandidate.theme != previous.theme
+        ).order_by(models.ContentCandidate.diamond_score.desc()).first()
+
+    # Fall back to the overall best if every remaining candidate shares the theme
+    if top_candidate is None:
+        top_candidate = pending.order_by(
+            models.ContentCandidate.diamond_score.desc()).first()
+
+    if top_candidate is None:
+        return None
+
+    hourly = models.HourlyOne(
+        publish_time=current_hour,
+        theme=top_candidate.theme or models.Theme.RANDOM,
+        candidate_id=top_candidate.id,
+        editorial_explanation=top_candidate.ai_explanation,
+        views_at_feature=top_candidate.view_count,  # snapshot for the 7-day delta
+    )
+    top_candidate.status = models.Status.PUBLISHED
+    db.add(hourly)
+    db.commit()
+    return hourly
+
+
 def get_hourly(db):
     """The current hour's pick, falling back to the latest so the site is never blank."""
     now = datetime.datetime.utcnow()
     hour_start = now.replace(minute=0, second=0, microsecond=0)
-    hourly = db.query(models.HourlyOne).filter(
-        models.HourlyOne.publish_time >= hour_start,
-        models.HourlyOne.publish_time <= now,
-    ).order_by(models.HourlyOne.publish_time.desc()).first()
+
+    def current_pick():
+        return db.query(models.HourlyOne).filter(
+            models.HourlyOne.publish_time >= hour_start,
+            models.HourlyOne.publish_time <= datetime.datetime.utcnow(),
+        ).order_by(models.HourlyOne.publish_time.desc()).first()
+
+    hourly = current_pick()
+
+    # Lazy scheduling: fill this hour on demand rather than relying on a background
+    # thread having survived. Free/sleepy hosts kill the process between requests,
+    # so the loop in jobs.py rarely lives long enough to reach the next hour.
+    if hourly is None and os.getenv("LAZY_SCHEDULING", "1") != "0":
+        try:
+            promote_next_pick(db)
+        except IntegrityError:
+            # Another request won the race for this hour; publish_time is unique.
+            db.rollback()
+        except Exception:
+            db.rollback()
+            raise
+        hourly = current_pick()
 
     is_stale = False
     if hourly is None:
@@ -81,6 +155,92 @@ def get_hourly(db):
         },
         "candidate": payload or None,
         "is_stale": is_stale,
+    }
+
+
+def get_status(db):
+    """Operational snapshot for diagnosing a deployment in one request.
+
+    Deliberately public and deliberately secret-free: it reports whether keys and
+    the database are configured, never their values.
+    """
+    now = datetime.datetime.utcnow()
+    current_hour = now.replace(minute=0, second=0, microsecond=0)
+
+    counts = {}
+    for status, total in db.query(
+            models.ContentCandidate.status, func.count()
+    ).group_by(models.ContentCandidate.status).all():
+        counts[_plain(status) or "UNKNOWN"] = total
+
+    by_source = {}
+    for source, total in db.query(
+            models.ContentCandidate.source_type, func.count()
+    ).group_by(models.ContentCandidate.source_type).all():
+        by_source[_plain(source) or "UNKNOWN"] = total
+
+    latest_discovered = db.query(func.max(models.ContentCandidate.discovered_date)).scalar()
+    pipeline_every = int(os.getenv("PIPELINE_EVERY_HOURS", "6"))
+    pipeline_due = (
+        True if latest_discovered is None
+        else (now - latest_discovered).total_seconds() >= pipeline_every * 3600
+    )
+
+    this_hour = db.query(models.HourlyOne).filter(
+        models.HourlyOne.publish_time == current_hour).first()
+    latest = db.query(models.HourlyOne).order_by(
+        models.HourlyOne.publish_time.desc()).first()
+    latest_candidate = None
+    if latest is not None:
+        latest_candidate = db.query(models.ContentCandidate).filter(
+            models.ContentCandidate.id == latest.candidate_id).first()
+
+    database_url = os.getenv("DATABASE_URL") or ""
+    if database_url.startswith("postgres"):
+        backend = "postgres"
+    elif database_url:
+        backend = "other"
+    else:
+        backend = "sqlite (ephemeral on most hosts)"
+
+    return {
+        "status": "ok",
+        "utc_now": _plain(now),
+        "current_hour": _plain(current_hour),
+
+        "config": {
+            "database": backend,
+            "gemini_key_configured": bool(os.getenv("GEMINI_API_KEY")),
+            "youtube_key_configured": bool(os.getenv("YOUTUBE_API_KEY")),
+            "admin_token_configured": bool(os.getenv("ADMIN_TOKEN")),
+            "background_scheduler_enabled": os.getenv("RUN_SCHEDULER") == "1",
+            "lazy_scheduling_enabled": os.getenv("LAZY_SCHEDULING", "1") != "0",
+            "allowed_origins": os.getenv("ALLOWED_ORIGINS", "*"),
+            "pipeline_every_hours": pipeline_every,
+            "outcome_check_days": int(os.getenv("OUTCOME_CHECK_DAYS", "7")),
+        },
+
+        "content": {
+            "candidates_by_status": counts,
+            "candidates_by_source": by_source,
+            "ready_to_feature": counts.get("PENDING_REVIEW", 0),
+            "last_ingestion": _plain(latest_discovered),
+            "pipeline_due": pipeline_due,
+        },
+
+        "schedule": {
+            "hours_published": db.query(func.count(models.HourlyOne.id)).scalar() or 0,
+            "current_hour_filled": this_hour is not None,
+            "latest_publish_time": _plain(latest.publish_time) if latest else None,
+            "latest_title": latest_candidate.title if latest_candidate else None,
+            "outcomes_pending_check": db.query(func.count(models.HourlyOne.id)).filter(
+                models.HourlyOne.outcome_checked_at.is_(None)).scalar() or 0,
+        },
+
+        "engagement": {
+            "comments_total": db.query(func.count(models.Comment.id)).scalar() or 0,
+            "feedback_total": db.query(func.count(models.Feedback.id)).scalar() or 0,
+        },
     }
 
 

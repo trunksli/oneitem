@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { MessageSquare, X, Send, Play } from 'lucide-react';
+import Link from 'next/link';
+import { MessageSquare, X, Send, Play, BookOpen } from 'lucide-react';
+import { API_BASE } from '@/lib/api';
+import ApiWarning from '@/components/api-warning';
+import { usePersistentState } from '@/lib/use-persistent-state';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface Candidate {
   id?: string;
@@ -33,7 +36,7 @@ export default function Home() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [displayName, setDisplayName] = usePersistentState("one_display_name");
 
   const [hourlyOne, setHourlyOne] = useState<HourlyResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,10 +71,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    try {
-      setDisplayName(localStorage.getItem("one_display_name") || "");
-    } catch { /* storage unavailable (private mode etc.) - stay anonymous */ }
-
     fetchHourly();
     fetchComments();
 
@@ -84,13 +83,6 @@ export default function Home() {
       clearInterval(hourlyInterval);
     };
   }, [fetchHourly, fetchComments]);
-
-  const handleNameChange = (name: string) => {
-    setDisplayName(name);
-    try {
-      localStorage.setItem("one_display_name", name);
-    } catch { /* storage unavailable - the name simply will not persist */ }
-  };
 
   const handleSendComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,8 +121,11 @@ export default function Home() {
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center">
-        <span className="label" style={{ color: 'var(--ink-faint)' }}>Loading ONE</span>
+      <main className="min-h-screen flex flex-col">
+        <ApiWarning />
+        <div className="flex-1 flex items-center justify-center">
+          <span className="label" style={{ color: 'var(--ink-faint)' }}>Loading ONE</span>
+        </div>
       </main>
     );
   }
@@ -144,6 +139,10 @@ export default function Home() {
   const canEmbed = Boolean(candidate?.source_type === "YOUTUBE" && candidate?.source_id);
   const playable = Boolean(canEmbed || candidate?.url);
 
+  // Most picks are now articles rather than videos, so the affordance has to say
+  // which it is: an embedded player for YouTube, a new tab for everything else.
+  const actionLabel = canEmbed ? "Play" : "Read";
+
   const handlePlay = () => {
     if (canEmbed) setIsPlaying(true);
     else if (candidate?.url) window.open(candidate.url, "_blank", "noopener,noreferrer");
@@ -151,6 +150,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
+      <ApiWarning />
 
       {/* Ribbon */}
       <header
@@ -165,7 +165,7 @@ export default function Home() {
           <span className="label hidden sm:block" style={{ color: 'var(--ink-faint)' }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </span>
-          <a href="/archive/" className="label link-accent">Archive</a>
+          <Link href="/archive" className="label link-accent">Archive</Link>
           <button
             onClick={() => setIsChatOpen(true)}
             className="label flex items-center gap-2 link-accent"
@@ -220,7 +220,7 @@ export default function Home() {
               role={playable ? "button" : undefined}
               tabIndex={playable ? 0 : undefined}
               onKeyDown={playable ? (e) => { if (e.key === 'Enter' || e.key === ' ') handlePlay(); } : undefined}
-              aria-label={playable && candidate ? `Play ${candidate.title}` : undefined}
+              aria-label={playable && candidate ? `${actionLabel}: ${candidate.title}` : undefined}
               className="w-full aspect-video relative overflow-hidden"
               style={{
                 border: '1px solid var(--line-strong)',
@@ -243,7 +243,8 @@ export default function Home() {
                       borderRadius: 'var(--radius-sm)',
                     }}
                   >
-                    <Play size={14} fill="currentColor" /> Play
+                    {canEmbed ? <Play size={14} fill="currentColor" /> : <BookOpen size={14} />}
+                    {actionLabel}
                   </span>
                 </div>
               ) : (
@@ -259,7 +260,7 @@ export default function Home() {
           {candidate?.url && (
             <p className="mt-2 text-right">
               <a href={candidate.url} target="_blank" rel="noopener noreferrer" className="label link-accent">
-                Watch on {candidate.source_type === "YOUTUBE" ? "YouTube" : "the source"} &#8599;
+                {canEmbed ? "Watch on YouTube" : "Open the original"} &#8599;
               </a>
             </p>
           )}
@@ -348,7 +349,7 @@ export default function Home() {
             type="text"
             value={displayName}
             maxLength={40}
-            onChange={(e) => handleNameChange(e.target.value)}
+            onChange={(e) => setDisplayName(e.target.value)}
             placeholder="Your name (optional)"
             className="w-full px-3 py-2 text-sm outline-none"
             style={{

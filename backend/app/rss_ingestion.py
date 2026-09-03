@@ -65,6 +65,12 @@ class _TextExtractor(HTMLParser):
         return re.sub(r'\n{2,}', '\n\n', re.sub(r'[ \t]+', ' ', raw)).strip()
 
 
+def is_safe_url(url):
+    """Only http(s) links may be stored: a feed is third-party input, and a
+    `javascript:` link would become one-click code execution in the browser."""
+    return bool(url) and url.strip().lower().startswith(("http://", "https://"))
+
+
 def strip_html(html_text: str) -> str:
     """Plain-text-ify a snippet of HTML (used for feed descriptions)."""
     return re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', html_text or '')).strip()
@@ -173,6 +179,9 @@ def ingest_feeds(db: Session, feed_urls=None):
                 continue
 
             for entry in entries:
+                if not is_safe_url(entry['url']):
+                    print("Skipping entry with unsafe link: %r" % (entry['url'],))
+                    continue
                 existing = db.query(models.ContentCandidate).filter_by(url=entry['url']).first()
                 if existing:
                     continue

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { safeExternalUrl } from '@/lib/url';
 import { API_BASE } from '@/lib/api';
 import ApiWarning from '@/components/api-warning';
 
@@ -75,11 +76,9 @@ export default function Archive() {
             </p>
           ) : (
             entries.map(entry => (
-              <a
+              <Link
                 key={entry.hourly_id}
-                href={entry.url ?? undefined}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={`/?pick=${entry.hourly_id}`}
                 className="flex gap-5 items-start py-6"
                 style={{ borderBottom: '1px solid var(--line)', textDecoration: 'none', color: 'inherit' }}
               >
@@ -107,8 +106,29 @@ export default function Archive() {
                       {entry.editorial_explanation}
                     </p>
                   )}
+                  {safeExternalUrl(entry.url) && (
+                    <span
+                      className="label link-accent inline-block mt-3"
+                      role="link"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.open(safeExternalUrl(entry.url), "_blank", "noopener,noreferrer");
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          window.open(safeExternalUrl(entry.url), "_blank", "noopener,noreferrer");
+                        }
+                      }}
+                    >
+                      Open the original &#8599;
+                    </span>
+                  )}
                 </div>
-              </a>
+              </Link>
             ))
           )}
         </div>

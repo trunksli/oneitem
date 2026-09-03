@@ -86,6 +86,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(queries.get_hourly(db))
             elif path == "/comments":
                 self._send(queries.get_comments(db, as_int("limit", 50)))
+            elif path.startswith("/pick/"):
+                self._send(queries.get_pick(db, path[len("/pick/"):]))
             elif path == "/archive":
                 self._send(queries.get_archive(db, as_int("limit", 100)))
             elif path.startswith("/admin/"):

@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { MessageSquare, X, Send, Play, BookOpen } from 'lucide-react';
+import { MessageSquare, X, Send, Play, BookOpen, Link2, Check } from 'lucide-react';
 import { API_BASE } from '@/lib/api';
 import ApiWarning from '@/components/api-warning';
 import { usePersistentState } from '@/lib/use-persistent-state';
+import { safeExternalUrl, permalinkFor } from '@/lib/url';
+import { usePickParam } from '@/lib/use-pick-param';
 
 
 interface Candidate {
@@ -21,9 +23,10 @@ interface Candidate {
 }
 
 interface HourlyResponse {
-  hourly?: { id: string; theme: string };
+  hourly?: { id: string; theme: string; publish_time?: string };
   candidate?: Candidate;
   is_stale?: boolean;
+  is_permalink?: boolean;
 }
 
 interface Comment {
@@ -42,9 +45,15 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [feedbackGiven, setFeedbackGiven] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  const fetchHourly = useCallback(() => {
-    fetch(`${API_BASE}/hourly`)
+  // A ?pick=<id> URL pins the page to one archived hour instead of "now".
+  const pinnedId = usePickParam();
+  const chatPanelRef = useRef<HTMLDivElement>(null);
+  const chatToggleRef = useRef<HTMLButtonElement>(null);
+
+  const fetchHourly = useCallback((pickId?: string | null) => {
+    fetch(pickId ? `${API_BASE}/pick/${encodeURIComponent(pickId)}` : `${API_BASE}/hourly`)
       .then(res => res.json())
       .then((data: HourlyResponse) => {
         setHourlyOne(prev => {
@@ -71,18 +80,31 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    fetchHourly();
+    fetchHourly(pinnedId);
     fetchComments();
 
-    // Poll comments every 10s, and re-check the hourly item every 60s so an
-    // open tab rolls over when a new hour is scheduled.
     const commentInterval = setInterval(fetchComments, 10000);
-    const hourlyInterval = setInterval(fetchHourly, 60000);
+    // Only the live view rolls over; a permalink must keep showing its own hour.
+    const hourlyInterval = pinnedId ? null : setInterval(() => fetchHourly(), 60000);
     return () => {
       clearInterval(commentInterval);
-      clearInterval(hourlyInterval);
+      if (hourlyInterval) clearInterval(hourlyInterval);
     };
-  }, [fetchHourly, fetchComments]);
+  }, [pinnedId, fetchHourly, fetchComments]);
+
+  // Escape closes the chat, and focus moves into and back out of the panel.
+  useEffect(() => {
+    if (!isChatOpen) return;
+    chatPanelRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsChatOpen(false);
+        chatToggleRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isChatOpen]);
 
   const handleSendComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,15 +159,30 @@ export default function Home() {
   // Only offer playback when there is something to play. The previous build showed
   // a Play badge even on the empty state, so clicking it did nothing at all.
   const canEmbed = Boolean(candidate?.source_type === "YOUTUBE" && candidate?.source_id);
-  const playable = Boolean(canEmbed || candidate?.url);
+  const playable = Boolean(canEmbed || safeExternalUrl(candidate?.url));
 
   // Most picks are now articles rather than videos, so the affordance has to say
   // which it is: an embedded player for YouTube, a new tab for everything else.
   const actionLabel = canEmbed ? "Play" : "Read";
 
+  const sourceUrl = safeExternalUrl(candidate?.url);
+  const creatorUrl = safeExternalUrl(candidate?.creator_url);
+
   const handlePlay = () => {
     if (canEmbed) setIsPlaying(true);
-    else if (candidate?.url) window.open(candidate.url, "_blank", "noopener,noreferrer");
+    else if (sourceUrl) window.open(sourceUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleShare = async () => {
+    const id = hourlyOne?.hourly?.id;
+    if (!id) return;
+    try {
+      await navigator.clipboard.writeText(permalinkFor(id));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard can be blocked; the address bar still works as a fallback.
+    }
   };
 
   return (
@@ -167,7 +204,9 @@ export default function Home() {
           </span>
           <Link href="/archive" className="label link-accent">Archive</Link>
           <button
+            ref={chatToggleRef}
             onClick={() => setIsChatOpen(true)}
+            aria-expanded={isChatOpen}
             className="label flex items-center gap-2 link-accent"
             style={{ background: 'none', border: 'none', cursor: 'pointer' }}
           >
@@ -177,10 +216,25 @@ export default function Home() {
         </div>
       </header>
 
+      {pinnedId && (
+        <div
+          className="w-full px-6 md:px-10 py-3 flex flex-wrap items-center justify-between gap-3"
+          style={{ background: 'var(--accent-wash)', borderBottom: '1px solid var(--line)' }}
+        >
+          <p className="label" style={{ color: 'var(--accent)' }}>
+            From the archive{hourlyOne?.hourly?.publish_time
+              ? ` / ${new Date(hourlyOne.hourly.publish_time + "Z").toLocaleString('en-US',
+                  { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric' })}`
+              : ""}
+          </p>
+          <Link href="/" className="label link-accent">Go to this hour&apos;s pick &#8594;</Link>
+        </div>
+      )}
+
       <div className="mx-auto px-6 md:px-10 py-10 md:py-16" style={{ maxWidth: 'var(--content-max)' }}>
 
         <p className="label" style={{ color: 'var(--ink-faint)' }}>
-          {isStale ? "Most Recent Pick" : "Current Feature"}
+          {pinnedId ? "A Past Diamond" : isStale ? "Last Hour's Pick" : "Current Feature"}
         </p>
 
         <h1 className="display mt-3 text-3xl md:text-5xl font-normal leading-tight">
@@ -190,8 +244,8 @@ export default function Home() {
         <p className="mt-3 text-[15px]" style={{ color: 'var(--ink-muted)' }}>
           {candidate ? (
             <>
-              {candidate.creator_url ? (
-                <a href={candidate.creator_url} target="_blank" rel="noopener noreferrer" className="link-accent">
+              {creatorUrl ? (
+                <a href={creatorUrl} target="_blank" rel="noopener noreferrer" className="link-accent">
                   {candidate.creator_name}
                 </a>
               ) : candidate.creator_name}
@@ -257,13 +311,23 @@ export default function Home() {
 
           {/* Escape hatch: some videos disallow embedding and browsers can block
               autoplay, so a direct link keeps playback from being a dead end. */}
-          {candidate?.url && (
-            <p className="mt-2 text-right">
-              <a href={candidate.url} target="_blank" rel="noopener noreferrer" className="label link-accent">
+          <div className="mt-2 flex items-center justify-between gap-4">
+            {hourlyOne?.hourly?.id ? (
+              <button
+                onClick={handleShare}
+                className="label flex items-center gap-2 link-accent"
+                style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                {copied ? <Check size={14} /> : <Link2 size={14} />}
+                {copied ? "Link copied" : "Copy link"}
+              </button>
+            ) : <span />}
+            {sourceUrl && (
+              <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="label link-accent">
                 {canEmbed ? "Watch on YouTube" : "Open the original"} &#8599;
               </a>
-            </p>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Editorial note */}
@@ -310,10 +374,19 @@ export default function Home() {
 
       {/* Chat panel */}
       <div
+        ref={chatPanelRef}
+        // Off-screen is not hidden: without inert the panel stays focusable and
+        // announced, so keyboard and screen-reader users land inside an invisible
+        // dialog. inert removes it from the tab order and the a11y tree entirely.
+        inert={!isChatOpen}
+        aria-hidden={!isChatOpen}
+        role="dialog"
+        aria-label="Daily Lobby chat"
+        tabIndex={-1}
         className={`fixed top-0 right-0 h-full w-full md:w-[380px] z-50 flex flex-col transition-transform duration-200 ease-in-out ${
           isChatOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
-        style={{ background: 'var(--surface)', borderLeft: '1px solid var(--line-strong)' }}
+        style={{ background: 'var(--surface)', borderLeft: '1px solid var(--line-strong)', outline: 'none' }}
       >
         <div className="px-5 py-4 flex justify-between items-center" style={{ borderBottom: '2px solid var(--rule)' }}>
           <div>
@@ -321,7 +394,7 @@ export default function Home() {
             <p className="label mt-1" style={{ color: 'var(--ink-faint)' }}>Clears at midnight</p>
           </div>
           <button
-            onClick={() => setIsChatOpen(false)}
+            onClick={() => { setIsChatOpen(false); chatToggleRef.current?.focus(); }}
             aria-label="Close chat"
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)' }}
           >

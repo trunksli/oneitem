@@ -193,6 +193,50 @@ def main():
         check("hourly now serves the override",
               queries.get_hourly(db)["candidate"]["title"] == "A Queued Article")
 
+        print("\nURL safety (third-party feed links)")
+        evil = models.ContentCandidate(
+            id="cand-evil", url="javascript:alert(document.cookie)", source_id="x",
+            source_type=models.SourceType.RSS, title="Malicious Feed Item",
+            creator_name="Bad Feed", creator_url="javascript:void(0)",
+            thumbnail_url="javascript:alert(1)", description="d",
+            discovered_date=datetime.datetime.utcnow(),
+            status=models.Status.PENDING_REVIEW, theme=models.Theme.RANDOM,
+            diamond_score=99.0, ai_explanation="Trust me.",
+        )
+        db.add(evil)
+        db.add(models.HourlyOne(id="hourly-evil", publish_time=hour_now() - datetime.timedelta(days=1),
+                                theme=models.Theme.RANDOM, candidate_id="cand-evil"))
+        db.commit()
+
+        evil_queue = [c for c in queries.get_queue(db, 50) if c["id"] == "cand-evil"][0]
+        check("queue strips javascript: url", evil_queue["url"] is None, repr(evil_queue["url"]))
+        evil_archive = [a for a in queries.get_archive(db) if a["hourly_id"] == "hourly-evil"][0]
+        check("archive strips javascript: url", evil_archive["url"] is None, repr(evil_archive["url"]))
+        check("archive strips javascript: creator_url", evil_archive["creator_url"] is None)
+        check("archive strips javascript: thumbnail", evil_archive["thumbnail_url"] is None)
+        pinned_evil = queries.get_pick(db, "hourly-evil")
+        check("permalink strips javascript: url", pinned_evil["candidate"]["url"] is None)
+        check("safe http urls survive", queries.get_pick(db, "hourly-past")["candidate"]["url"]
+              == "https://youtube.com/watch?v=aaa")
+
+        # Keep it out of the way of the scheduling checks below.
+        db.query(models.HourlyOne).filter(models.HourlyOne.id == "hourly-evil").delete()
+        db.query(models.ContentCandidate).filter(
+            models.ContentCandidate.id == "cand-evil").update({"status": models.Status.REJECTED})
+        db.commit()
+
+        print("\n/pick (permalinks)")
+        pinned = queries.get_pick(db, "hourly-past")
+        check("returns the requested hour", pinned["hourly"]["id"] == "hourly-past")
+        check("flagged as a permalink", pinned["is_permalink"] is True)
+        check("never flagged stale", pinned["is_stale"] is False)
+        check("carries the candidate", pinned["candidate"]["title"] == "A Featured Video")
+        try:
+            queries.get_pick(db, "no-such-id")
+            check("unknown id raises NotFound", False)
+        except queries.NotFound:
+            check("unknown id raises NotFound", True)
+
         print("\nlazy scheduling")
         # Clear this hour, leave a scored candidate waiting, and confirm a plain
         # read fills the slot -- the free-tier case where no scheduler thread ran.

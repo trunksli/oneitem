@@ -89,6 +89,15 @@ def get_hourly_one(db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.get("/pick/{hourly_id}")
+def get_pick(hourly_id: str, db: Session = Depends(get_db)):
+    """Permalink target: one specific featured hour."""
+    try:
+        return queries.get_pick(db, hourly_id)
+    except queries.NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @app.get("/comments")
 def get_comments(limit: int = 50, db: Session = Depends(get_db)):
     return queries.get_comments(db, limit)

@@ -23,6 +23,23 @@ class NotFound(Exception):
     """Raised when a requested row does not exist; the HTTP layer maps it to 404."""
 
 
+SAFE_URL_SCHEMES = ("http://", "https://")
+
+
+def _safe_url(value):
+    """Return the URL only if it is http(s).
+
+    Feed and API data is third-party: a `javascript:` or `data:` link would reach
+    an <a href> or window.open() in the browser and execute. Checked on output as
+    well as on ingestion so rows stored before validation existed stay harmless.
+    """
+    if not value:
+        return None
+    if value.strip().lower().startswith(SAFE_URL_SCHEMES):
+        return value
+    return None
+
+
 def _plain(value):
     """Normalize enums to their string value and datetimes to ISO strings."""
     if value is None:
@@ -41,9 +58,9 @@ def _candidate_summary(candidate):
     return {
         "title": candidate.title,
         "creator_name": candidate.creator_name,
-        "creator_url": candidate.creator_url,
-        "url": candidate.url,
-        "thumbnail_url": candidate.thumbnail_url,
+        "creator_url": _safe_url(candidate.creator_url),
+        "url": _safe_url(candidate.url),
+        "thumbnail_url": _safe_url(candidate.thumbnail_url),
         "source_type": _plain(candidate.source_type),
         "source_id": candidate.source_id,
     }
@@ -155,6 +172,38 @@ def get_hourly(db):
         },
         "candidate": payload or None,
         "is_stale": is_stale,
+    }
+
+
+def get_pick(db, hourly_id):
+    """One specific featured hour, addressed by id -- the permalink target.
+
+    Same payload shape as get_hourly so the page can render either without
+    branching, plus is_permalink so it can show the "back to now" affordance.
+    """
+    hourly = db.query(models.HourlyOne).filter(
+        models.HourlyOne.id == hourly_id).first()
+    if hourly is None:
+        raise NotFound("No such pick")
+
+    candidate = db.query(models.ContentCandidate).filter(
+        models.ContentCandidate.id == hourly.candidate_id).first()
+
+    payload = {"id": candidate.id} if candidate is not None else {}
+    payload.update(_candidate_summary(candidate))
+    if candidate is not None:
+        payload["ai_explanation"] = candidate.ai_explanation
+
+    return {
+        "hourly": {
+            "id": hourly.id,
+            "publish_time": _plain(hourly.publish_time),
+            "theme": _plain(hourly.theme),
+            "editorial_explanation": hourly.editorial_explanation,
+        },
+        "candidate": payload or None,
+        "is_stale": False,
+        "is_permalink": True,
     }
 
 
@@ -332,7 +381,7 @@ def get_queue(db, limit=10):
         models.ContentCandidate.status == models.Status.PENDING_REVIEW
     ).order_by(models.ContentCandidate.diamond_score.desc()).limit(max(1, min(limit, 50))).all()
     return [{
-        "id": c.id, "title": c.title, "creator_name": c.creator_name, "url": c.url,
+        "id": c.id, "title": c.title, "creator_name": c.creator_name, "url": _safe_url(c.url),
         "source_type": _plain(c.source_type), "theme": _plain(c.theme),
         "view_count": c.view_count, "subscriber_count": c.subscriber_count,
         "upload_date": _plain(c.upload_date),
@@ -383,7 +432,7 @@ def get_outcomes(db, limit=200):
             "title": candidate.title if candidate else None,
             "creator_name": candidate.creator_name if candidate else None,
             "source_type": _plain(candidate.source_type) if candidate else None,
-            "url": candidate.url if candidate else None,
+            "url": _safe_url(candidate.url) if candidate else None,
             "diamond_score": candidate.diamond_score if candidate else None,
             "quality_score": candidate.quality_score if candidate else None,
             "interestingness_score": candidate.interestingness_score if candidate else None,

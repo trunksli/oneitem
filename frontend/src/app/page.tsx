@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { MessageSquare, X, Send } from 'lucide-react';
+import { MessageSquare, X, Send, Play } from 'lucide-react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -12,6 +12,7 @@ interface Candidate {
   source_type: string;
   title: string;
   creator_name: string;
+  creator_url?: string;
   ai_explanation: string;
   thumbnail_url: string;
 }
@@ -74,8 +75,8 @@ export default function Home() {
     fetchHourly();
     fetchComments();
 
-    // Poll for new comments every 10s, and re-check the hourly item every 60s
-    // so an open tab rolls over when a new hour is scheduled.
+    // Poll comments every 10s, and re-check the hourly item every 60s so an
+    // open tab rolls over when a new hour is scheduled.
     const commentInterval = setInterval(fetchComments, 10000);
     const hourlyInterval = setInterval(fetchHourly, 60000);
     return () => {
@@ -88,7 +89,7 @@ export default function Home() {
     setDisplayName(name);
     try {
       localStorage.setItem("one_display_name", name);
-    } catch { /* storage unavailable - name just won't persist */ }
+    } catch { /* storage unavailable - the name simply will not persist */ }
   };
 
   const handleSendComment = async (e: React.FormEvent) => {
@@ -104,9 +105,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: commentText, display_name: displayName.trim() || null })
       });
-      if (res.ok) {
-        fetchComments();
-      }
+      if (res.ok) fetchComments();
     } catch (err) {
       console.error(err);
     }
@@ -128,124 +127,177 @@ export default function Home() {
     }
   };
 
-  const handlePlay = () => {
-    if (!candidate) return;
-    if (candidate.source_type === "YOUTUBE" && candidate.source_id) {
-      setIsPlaying(true);
-    } else if (candidate.url) {
-      window.open(candidate.url, "_blank", "noopener,noreferrer");
-    }
-  };
-
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading ONE...</div>;
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <span className="label" style={{ color: 'var(--ink-faint)' }}>Loading ONE</span>
+      </main>
+    );
   }
 
-  // Fallback if DB is empty
-  const candidate: Candidate = hourlyOne?.candidate || {
-    title: "We are discovering something amazing...",
-    creator_name: "ONE Engine",
-    source_type: "System",
-    ai_explanation: "Check back shortly when the AI selects the next diamond.",
-    thumbnail_url: ""
-  };
+  const candidate: Candidate | null = hourlyOne?.candidate ?? null;
   const theme = (hourlyOne?.hourly?.theme || "Random").replace(/_/g, " ");
+  const isStale = Boolean(hourlyOne?.is_stale);
+
+  // Only offer playback when there is something to play. The previous build showed
+  // a Play badge even on the empty state, so clicking it did nothing at all.
+  const canEmbed = Boolean(candidate?.source_type === "YOUTUBE" && candidate?.source_id);
+  const playable = Boolean(canEmbed || candidate?.url);
+
+  const handlePlay = () => {
+    if (canEmbed) setIsPlaying(true);
+    else if (candidate?.url) window.open(candidate.url, "_blank", "noopener,noreferrer");
+  };
 
   return (
-    <main className="min-h-screen bg-[#FDFDFD] text-[#111111] font-sans flex flex-col items-center justify-center p-6 md:p-24 selection:bg-black selection:text-white relative overflow-hidden">
+    <main className="min-h-screen" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
 
-      {/* Header */}
-      <header className="absolute top-0 w-full p-8 flex justify-between items-center z-10">
+      {/* Ribbon */}
+      <header
+        className="w-full flex justify-between items-center gap-4 px-6 md:px-10 py-4"
+        style={{ borderBottom: '2px solid var(--rule)' }}
+      >
         <div className="flex flex-col">
-           <h1 className="text-xl font-bold tracking-tighter">ONE</h1>
-           <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{theme} Hour</span>
+          <span className="display text-2xl font-bold tracking-tight leading-none">ONE</span>
+          <span className="label mt-1" style={{ color: 'var(--accent)' }}>{theme} Hour</span>
         </div>
-        <div className="flex items-center gap-6">
-          <div className="text-sm font-medium tracking-wide text-gray-500 uppercase hidden sm:block">
+        <div className="flex items-center gap-5">
+          <span className="label hidden sm:block" style={{ color: 'var(--ink-faint)' }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-          </div>
-          <a
-            href="/archive/"
-            className="text-sm font-bold tracking-widest uppercase hover:text-gray-500 transition-colors"
-          >
-            Archive
-          </a>
+          </span>
+          <a href="/archive/" className="label link-accent">Archive</a>
           <button
             onClick={() => setIsChatOpen(true)}
-            className="flex items-center gap-2 text-sm font-bold tracking-widest uppercase hover:text-gray-500 transition-colors"
+            className="label flex items-center gap-2 link-accent"
+            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
           >
-            <MessageSquare size={18} />
+            <MessageSquare size={16} />
             <span>Chat ({comments.length})</span>
           </button>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <div className={`max-w-4xl w-full flex flex-col items-center gap-12 mt-16 transition-all duration-500 ${isChatOpen ? 'md:-translate-x-48 opacity-50 md:opacity-100' : ''}`}>
+      <div className="mx-auto px-6 md:px-10 py-10 md:py-16" style={{ maxWidth: 'var(--content-max)' }}>
 
-        <div className="text-center space-y-4">
-          <p className="text-sm tracking-widest uppercase text-gray-400">Current Feature</p>
-          <h2 className="text-4xl md:text-5xl lg:text-6xl font-medium tracking-tight leading-tight max-w-3xl">
-            {candidate.title}
-          </h2>
-          <div className="flex items-center justify-center gap-2 text-gray-500 font-medium">
-            <span>{candidate.creator_name}</span>
-            <span>&middot;</span>
-            <span>{candidate.source_type}</span>
-          </div>
-        </div>
+        <p className="label" style={{ color: 'var(--ink-faint)' }}>
+          {isStale ? "Most Recent Pick" : "Current Feature"}
+        </p>
+
+        <h1 className="display mt-3 text-3xl md:text-5xl font-normal leading-tight">
+          {candidate ? candidate.title : "We are discovering something amazing…"}
+        </h1>
+
+        <p className="mt-3 text-[15px]" style={{ color: 'var(--ink-muted)' }}>
+          {candidate ? (
+            <>
+              {candidate.creator_url ? (
+                <a href={candidate.creator_url} target="_blank" rel="noopener noreferrer" className="link-accent">
+                  {candidate.creator_name}
+                </a>
+              ) : candidate.creator_name}
+              <span style={{ color: 'var(--line-strong)' }}> / </span>
+              {candidate.source_type}
+            </>
+          ) : "The engine is selecting the next diamond."}
+        </p>
 
         {/* Media */}
-        {isPlaying && candidate.source_id ? (
-          <div className="w-full aspect-video border border-gray-200">
-            <iframe
-              className="w-full h-full"
-              src={`https://www.youtube.com/embed/${candidate.source_id}?autoplay=1`}
-              title={candidate.title}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
-          </div>
-        ) : (
-          <div
-            className="w-full aspect-video bg-gray-100 relative overflow-hidden group cursor-pointer border border-gray-200"
-            onClick={handlePlay}
-            style={candidate.thumbnail_url ? { backgroundImage: `url(${candidate.thumbnail_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
-          >
-            <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-transparent transition-colors">
-              <span className="text-white font-medium tracking-widest uppercase group-hover:scale-105 transition-transform duration-500 bg-black/50 px-4 py-2 rounded">
-                Play
-              </span>
+        <div className="mt-8">
+          {isPlaying && canEmbed ? (
+            <div className="w-full aspect-video" style={{ border: '1px solid var(--line-strong)' }}>
+              <iframe
+                className="w-full h-full"
+                src={`https://www.youtube.com/embed/${candidate!.source_id}?autoplay=1`}
+                title={candidate!.title}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerPolicy="strict-origin-when-cross-origin"
+                allowFullScreen
+              />
             </div>
-          </div>
-        )}
+          ) : (
+            <div
+              onClick={playable ? handlePlay : undefined}
+              role={playable ? "button" : undefined}
+              tabIndex={playable ? 0 : undefined}
+              onKeyDown={playable ? (e) => { if (e.key === 'Enter' || e.key === ' ') handlePlay(); } : undefined}
+              aria-label={playable && candidate ? `Play ${candidate.title}` : undefined}
+              className="w-full aspect-video relative overflow-hidden"
+              style={{
+                border: '1px solid var(--line-strong)',
+                background: candidate?.thumbnail_url
+                  ? `url(${candidate.thumbnail_url}) center/cover`
+                  : 'var(--sunken)',
+                cursor: playable ? 'pointer' : 'default',
+              }}
+            >
+              {playable ? (
+                <div
+                  className="absolute inset-0 flex items-center justify-center"
+                  style={{ background: 'rgba(26,16,10,0.30)' }}
+                >
+                  <span
+                    className="label flex items-center gap-2 px-5 py-3"
+                    style={{
+                      background: 'var(--accent)',
+                      color: 'var(--ink-inverse)',
+                      borderRadius: 'var(--radius-sm)',
+                    }}
+                  >
+                    <Play size={14} fill="currentColor" /> Play
+                  </span>
+                </div>
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="label" style={{ color: 'var(--ink-faint)' }}>Nothing scheduled yet</span>
+                </div>
+              )}
+            </div>
+          )}
 
-        {/* Editorial Explanation */}
-        <div className="max-w-2xl text-center">
-          <p className="text-lg md:text-xl text-gray-600 leading-relaxed font-serif italic">
-            "{candidate.ai_explanation}"
-          </p>
+          {/* Escape hatch: some videos disallow embedding and browsers can block
+              autoplay, so a direct link keeps playback from being a dead end. */}
+          {candidate?.url && (
+            <p className="mt-2 text-right">
+              <a href={candidate.url} target="_blank" rel="noopener noreferrer" className="label link-accent">
+                Watch on {candidate.source_type === "YOUTUBE" ? "YouTube" : "the source"} &#8599;
+              </a>
+            </p>
+          )}
         </div>
 
-        {/* Feedback Section */}
-        <div className="mt-16 pt-16 border-t border-gray-200 w-full flex flex-col items-center gap-8">
+        {/* Editorial note */}
+        {candidate?.ai_explanation && (
+          <>
+            <div className="mt-10" style={{ height: 1, background: 'var(--line)' }} />
+            <p className="label mt-6" style={{ color: 'var(--ink-faint)' }}>Why this one</p>
+            <p className="display mt-3 text-lg md:text-xl leading-relaxed" style={{ color: 'var(--ink-muted)' }}>
+              {candidate.ai_explanation}
+            </p>
+          </>
+        )}
+
+        {/* Feedback */}
+        <div className="mt-12" style={{ height: 1, background: 'var(--line)' }} />
+        <div className="mt-8">
           {feedbackGiven ? (
-            <h3 className="text-lg font-medium text-gray-500">Thanks — your feedback helps pick the next ONE.</h3>
+            <p className="text-[15px]" style={{ color: 'var(--ink-muted)' }}>
+              Thank you &mdash; your answer decides what we surface next.
+            </p>
           ) : (
             <>
-              <h3 className="text-lg font-medium">Have you seen this before?</h3>
-              <div className="flex gap-4 w-full max-w-md">
+              <p className="label" style={{ color: 'var(--ink-faint)' }}>Had you seen this before?</p>
+              <div className="flex flex-col sm:flex-row gap-3 mt-4">
                 <button
                   onClick={() => handleFeedback("NEVER_SEEN")}
                   disabled={!hourlyOne?.hourly?.id}
-                  className="flex-1 py-4 px-6 bg-black text-white text-sm font-bold tracking-wider uppercase hover:bg-gray-800 transition-colors disabled:opacity-40"
+                  className="btn btn-primary flex-1"
                 >
                   Never Seen It
                 </button>
                 <button
                   onClick={() => handleFeedback("KNEW_ALREADY")}
                   disabled={!hourlyOne?.hourly?.id}
-                  className="flex-1 py-4 px-6 bg-white border-2 border-black text-black text-sm font-bold tracking-wider uppercase hover:bg-gray-50 transition-colors disabled:opacity-40"
+                  className="btn btn-secondary flex-1"
                 >
                   I Knew This
                 </button>
@@ -253,51 +305,56 @@ export default function Home() {
             </>
           )}
         </div>
-
       </div>
 
-      {/* Sliding Chat Panel */}
+      {/* Chat panel */}
       <div
-        className={`fixed top-0 right-0 h-full w-full md:w-96 bg-white border-l border-gray-200 shadow-2xl transform transition-transform duration-500 ease-in-out z-50 flex flex-col ${
+        className={`fixed top-0 right-0 h-full w-full md:w-[380px] z-50 flex flex-col transition-transform duration-200 ease-in-out ${
           isChatOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
+        style={{ background: 'var(--surface)', borderLeft: '1px solid var(--line-strong)' }}
       >
-        <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+        <div className="px-5 py-4 flex justify-between items-center" style={{ borderBottom: '2px solid var(--rule)' }}>
           <div>
-             <h3 className="font-bold tracking-wider uppercase text-sm">Daily Lobby</h3>
-             <p className="text-xs text-gray-500">Clears at midnight</p>
+            <p className="display text-lg leading-none">Daily Lobby</p>
+            <p className="label mt-1" style={{ color: 'var(--ink-faint)' }}>Clears at midnight</p>
           </div>
           <button
             onClick={() => setIsChatOpen(false)}
-            className="text-gray-500 hover:text-black transition-colors"
+            aria-label="Close chat"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)' }}
           >
-            <X size={24} />
+            <X size={20} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+        <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
           {comments.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-gray-400 text-sm italic">
-              Be the first to comment today.
-            </div>
+            <p className="text-sm mt-4" style={{ color: 'var(--ink-faint)' }}>
+              No one has said anything yet today.
+            </p>
           ) : (
             comments.map((c, i) => (
-              <div key={c.id ?? i} className="bg-gray-100 p-4 rounded-lg text-sm text-gray-800">
-                <div className="font-bold text-xs text-gray-500 mb-1">{c.display_name || "Anonymous"}</div>
-                {c.content}
+              <div key={c.id ?? i} className="pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
+                <p className="label" style={{ color: 'var(--accent)' }}>{c.display_name || "Anonymous"}</p>
+                <p className="text-[15px] mt-1" style={{ color: 'var(--ink)' }}>{c.content}</p>
               </div>
             ))
           )}
         </div>
 
-        <div className="p-4 border-t border-gray-200 bg-white space-y-2">
+        <div className="px-5 py-4 flex flex-col gap-2" style={{ borderTop: '1px solid var(--line)' }}>
           <input
             type="text"
             value={displayName}
             maxLength={40}
             onChange={(e) => handleNameChange(e.target.value)}
             placeholder="Your name (optional)"
-            className="w-full bg-gray-50 border border-gray-200 rounded-full px-4 py-1.5 text-xs outline-none focus:ring-2 focus:ring-black"
+            className="w-full px-3 py-2 text-sm outline-none"
+            style={{
+              background: 'var(--paper)', color: 'var(--ink)',
+              border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)',
+            }}
           />
           <form onSubmit={handleSendComment} className="flex gap-2">
             <input
@@ -305,27 +362,36 @@ export default function Home() {
               value={newComment}
               maxLength={500}
               onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Join the conversation..."
-              className="flex-1 bg-gray-100 border-none rounded-full px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-black"
+              placeholder="Say something..."
+              className="flex-1 px-3 py-2 text-sm outline-none"
+              style={{
+                background: 'var(--paper)', color: 'var(--ink)',
+                border: '1px solid var(--line-strong)', borderRadius: 'var(--radius-sm)',
+              }}
             />
             <button
               type="submit"
-              className="bg-black text-white p-2 rounded-full hover:bg-gray-800 transition-colors flex items-center justify-center w-10 h-10"
+              aria-label="Send message"
+              className="flex items-center justify-center"
+              style={{
+                background: 'var(--accent)', color: 'var(--ink-inverse)',
+                border: 'none', borderRadius: 'var(--radius-sm)',
+                width: 44, minHeight: 40, cursor: 'pointer',
+              }}
             >
-              <Send size={16} />
+              <Send size={15} />
             </button>
           </form>
         </div>
       </div>
 
-      {/* Overlay for mobile to close chat */}
       {isChatOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-20 z-40 md:hidden"
+          className="fixed inset-0 z-40 md:hidden"
+          style={{ background: 'rgba(26,16,10,0.35)' }}
           onClick={() => setIsChatOpen(false)}
         />
       )}
-
     </main>
   );
 }

@@ -1,25 +1,138 @@
 @import "tailwindcss";
 
-@theme {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/**
+ * ONE design tokens — "Pinstripe Ember"
+ *
+ * The Pinstripe system from Balmody, re-skinned from ink-blue to ember orange.
+ * Structure is unchanged: ink on warm paper, serif display, hairline rules,
+ * near-square corners, a 2px rule under the ribbon.
+ *
+ * Rules (carried over from Balmody, worth keeping):
+ *  - This file is the only place in the app allowed to hold a colour literal.
+ *  - Names describe the job, not the colour, so a re-skin is this file alone.
+ *  - Both themes live here. Components read the variables, so the OS appearance
+ *    setting is honoured without a single dark: class.
+ *
+ * Why the ink is brown-black rather than orange: Pinstripe uses one "ink" for
+ * body text AND primary fills. Orange body text is unreadable, so the ink warms
+ * toward orange and the accent carries the actual orange — on the ribbon rule,
+ * primary buttons and links, which is what reads as "an orange product".
+ * Every pairing below is WCAG AA or better against its background.
+ */
+:root {
+  --paper: #FDF8F3;            /* canvas: warm cream */
+  --surface: #FFFCF7;          /* fields, rows, panels */
+  --sunken: #F5EDE3;           /* pressed and disabled fills */
+
+  --ink: #2A1A0F;              /* primary text (15.9:1 on paper) */
+  --ink-muted: #6B5847;        /* secondary text and labels (6.4:1) */
+  --ink-faint: #7A6552;        /* timestamps, placeholders (5.2:1) */
+  --ink-inverse: #FDF8F3;      /* text on an accent or ink fill */
+  --ink-pressed: #14100C;      /* ink button, pressed */
+
+  --accent: #C2410C;           /* ember: rules, primary fills, links (4.9:1) */
+  --accent-pressed: #9A3412;
+  --accent-wash: #FBEDE4;      /* tinted background for accent contexts */
+
+  --line: #E4D7C8;             /* hairline between rows */
+  --line-strong: #B79B7C;      /* control borders */
+  --rule: #C2410C;             /* the 2px rule under the ribbon */
+
+  --danger: #9C2B2B;
+  --success: #2E5E3A;
+
+  --font-display: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  --font-sans: var(--font-spline), Inter, ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+
+  /* Base-8 spacing, matching Balmody's scale */
+  --space-xxs: 4px;  --space-xs: 8px;   --space-sm: 12px; --space-md: 16px;
+  --space-lg: 24px;  --space-xl: 32px;  --space-xxl: 56px; --space-xxxl: 88px;
+
+  --radius-sm: 3px;  --radius-md: 4px;  --radius-pill: 999px;
+  --content-max: 720px;
+  --motion: 200ms;
 }
 
-:root {
-  --background: #FDFDFD;
-  --foreground: #111111;
+/**
+ * Dark mode: warm paper on ink, same hue family, so it reads as one product.
+ * The ground is lifted off pure black — pure black on OLED makes text edges
+ * shimmer while scrolling — and the ember is lightened to hold contrast.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191310;
+    --surface: #221A15;
+    --sunken: #2C221B;
+
+    --ink: #F0E7DC;
+    --ink-muted: #B3A695;
+    --ink-faint: #96897A;
+    --ink-inverse: #191310;
+    --ink-pressed: #D8CDBF;
+
+    --accent: #F98B4A;
+    --accent-pressed: #E07038;
+    --accent-wash: #2E1D13;
+
+    --line: #372B23;
+    --line-strong: #5A483B;
+    --rule: #F98B4A;
+
+    --danger: #E28A8A;
+    --success: #8FC3A2;
+  }
 }
+
+/* No bare `*` reset here: unlayered rules beat everything inside Tailwind's
+   @layer utilities, so `* { margin: 0 }` silently killed mx-auto and every
+   other margin/padding utility. Tailwind's preflight already handles this. */
 
 body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
+/* Uppercase, letterspaced label — Pinstripe's `label` type token. */
+.label {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+/* Serif display, used for the feature title and the editorial note. */
+.display { font-family: var(--font-display); }
+
+/* Controls: 3px radius, 1px border, 200ms on colour only — never size. */
+.btn {
+  min-height: 48px;
+  padding: var(--space-sm) var(--space-xl);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color var(--motion) ease-in-out,
+              border-color var(--motion) ease-in-out,
+              color var(--motion) ease-in-out;
+}
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--ink-inverse); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-pressed); border-color: var(--accent-pressed); }
+.btn-secondary { background: var(--surface); border-color: var(--line-strong); color: var(--ink); }
+.btn-secondary:hover:not(:disabled) { background: var(--sunken); }
+.btn:disabled { background: var(--sunken); border-color: var(--line); color: var(--ink-faint); cursor: not-allowed; }
+
+.link-accent { color: var(--accent); text-decoration: none; }
+.link-accent:hover { text-decoration: underline; }
+
+/* Honour the OS reduce-motion setting (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 1ms !important; animation-duration: 1ms !important; }
 }

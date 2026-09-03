@@ -67,6 +67,9 @@ function compact(value: number | null): string {
   return Intl.NumberFormat('en-US', { notation: 'compact' }).format(value);
 }
 
+const cell = { padding: '10px 12px', borderBottom: '1px solid var(--line)' } as const;
+const headCell = { padding: '10px 12px', borderBottom: '1px solid var(--line-strong)', textAlign: 'left' as const };
+
 export default function Admin() {
   const [token, setToken] = useState("");
   const [queue, setQueue] = useState<QueueCandidate[]>([]);
@@ -79,9 +82,8 @@ export default function Admin() {
     if (!adminToken) return;
     setStatus("Loading queue...");
     try {
-      const res = await fetch(`${API_BASE}/admin/queue?limit=15`, {
-        headers: { "X-Admin-Token": adminToken }
-      });
+      const headers = { "X-Admin-Token": adminToken };
+      const res = await fetch(`${API_BASE}/admin/queue?limit=15`, { headers });
       if (res.status === 403) {
         setStatus("Invalid admin token.");
         setQueue([]);
@@ -91,7 +93,6 @@ export default function Admin() {
       setQueue(Array.isArray(data) ? data : []);
       setStatus(`${Array.isArray(data) ? data.length : 0} candidates pending review, ranked by Diamond Score.`);
 
-      const headers = { "X-Admin-Token": adminToken };
       const [sourcesRes, outcomesRes] = await Promise.all([
         fetch(`${API_BASE}/admin/sources`, { headers }),
         fetch(`${API_BASE}/admin/outcomes`, { headers }),
@@ -139,7 +140,7 @@ export default function Admin() {
       const data = await res.json();
       if (res.ok) {
         setStatus(path === "schedule"
-          ? "Featured for the current hour. The displaced pick (if any) is back in the queue."
+          ? "Featured for the current hour. Any displaced pick is back in the queue."
           : "Candidate rejected.");
         await loadQueue(token);
       } else {
@@ -154,169 +155,209 @@ export default function Admin() {
   };
 
   return (
-    <main className="min-h-screen bg-[#FDFDFD] text-[#111111] font-sans p-6 md:p-16">
-      <header className="max-w-5xl mx-auto mb-8">
-        <a href="/" className="text-xl font-bold tracking-tighter hover:text-gray-500 transition-colors">ONE</a>
-        <h1 className="text-3xl font-medium tracking-tight mt-2">Review Queue</h1>
-        <p className="text-sm text-gray-500 mt-1">{status}</p>
-        <form onSubmit={handleTokenSubmit} className="mt-4 flex gap-2 max-w-md">
+    <main className="min-h-screen" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
+
+      <header
+        className="w-full flex justify-between items-center gap-4 px-6 md:px-10 py-4"
+        style={{ borderBottom: '2px solid var(--rule)' }}
+      >
+        <a href="/" className="display text-2xl font-bold tracking-tight leading-none" style={{ color: 'var(--ink)', textDecoration: 'none' }}>
+          ONE
+        </a>
+        <a href="/" className="label link-accent">Now Playing &#8594;</a>
+      </header>
+
+      <div className="mx-auto px-6 md:px-10 py-10" style={{ maxWidth: 1100 }}>
+        <p className="label" style={{ color: 'var(--ink-faint)' }}>Curation</p>
+        <h1 className="display mt-3 text-3xl md:text-4xl">Review Queue</h1>
+        <p className="mt-2 text-[15px]" style={{ color: 'var(--ink-muted)' }}>{status}</p>
+
+        <form onSubmit={handleTokenSubmit} className="mt-5 flex gap-2 max-w-md">
           <input
             type="password"
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder="Admin token"
-            className="flex-1 bg-gray-100 border-none rounded px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-black"
+            className="flex-1 px-3 py-2 text-sm outline-none"
+            style={{
+              background: 'var(--surface)', color: 'var(--ink)',
+              border: '1px solid var(--line-strong)', borderRadius: 'var(--radius-sm)',
+            }}
           />
-          <button type="submit" className="bg-black text-white px-4 py-2 text-sm font-bold uppercase tracking-wider hover:bg-gray-800 transition-colors">
+          <button type="submit" className="btn btn-primary" style={{ minHeight: 40, padding: '8px 20px' }}>
             Load
           </button>
         </form>
-      </header>
 
-      <div className="max-w-5xl mx-auto flex flex-col gap-6">
-        {queue.map((c, rank) => (
-          <div key={c.id} className="border border-gray-200 bg-white p-5">
-            <div className="flex flex-wrap justify-between items-start gap-4">
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                  #{rank + 1} &middot; {c.source_type} &middot; {(c.theme || "?").replace(/_/g, " ")}
+        {/* Queue */}
+        <div className="mt-10 flex flex-col gap-4">
+          {queue.map((c, rank) => (
+            <div key={c.id} className="p-5" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
+              <div className="flex flex-wrap justify-between items-start gap-4">
+                <div className="min-w-0">
+                  <p className="label" style={{ color: 'var(--accent)' }}>
+                    #{rank + 1} / {c.source_type} / {(c.theme || "?").replace(/_/g, " ")}
+                  </p>
+                  <a
+                    href={c.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="display text-lg leading-snug"
+                    style={{ color: 'var(--ink)', textDecoration: 'none' }}
+                  >
+                    {c.title}
+                  </a>
+                  <p className="text-sm mt-1" style={{ color: 'var(--ink-muted)' }}>
+                    {c.creator_name}
+                    {c.view_count != null && <> / {c.view_count.toLocaleString()} views</>}
+                    {c.subscriber_count != null && c.subscriber_count > 0 && <> of {c.subscriber_count.toLocaleString()} subs</>}
+                  </p>
                 </div>
-                <a href={c.url} target="_blank" rel="noopener noreferrer"
-                   className="text-lg font-medium leading-snug hover:text-gray-500 transition-colors">
-                  {c.title}
-                </a>
-                <div className="text-sm text-gray-500">{c.creator_name}
-                  {c.view_count != null && <> &middot; {c.view_count.toLocaleString()} views</>}
-                  {c.subscriber_count != null && c.subscriber_count > 0 && <> / {c.subscriber_count.toLocaleString()} subs</>}
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => act("schedule", c.id)}
+                    disabled={busy}
+                    className="btn btn-primary"
+                    style={{ minHeight: 40, padding: '8px 18px', fontSize: 12 }}
+                  >
+                    Feature Now
+                  </button>
+                  <button
+                    onClick={() => act("reject", c.id)}
+                    disabled={busy}
+                    className="btn btn-secondary"
+                    style={{ minHeight: 40, padding: '8px 18px', fontSize: 12 }}
+                  >
+                    Reject
+                  </button>
                 </div>
               </div>
-              <div className="flex gap-2 shrink-0">
-                <button
-                  onClick={() => act("schedule", c.id)}
-                  disabled={busy}
-                  className="bg-black text-white px-4 py-2 text-xs font-bold uppercase tracking-wider hover:bg-gray-800 transition-colors disabled:opacity-40"
-                >
-                  Feature Now
-                </button>
-                <button
-                  onClick={() => act("reject", c.id)}
-                  disabled={busy}
-                  className="bg-white border-2 border-black px-4 py-2 text-xs font-bold uppercase tracking-wider hover:bg-gray-50 transition-colors disabled:opacity-40"
-                >
-                  Reject
-                </button>
+
+              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs" style={{ color: 'var(--ink-muted)' }}>
+                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>Diamond {num(c.diamond_score)}</span>
+                <span>Quality {num(c.quality_score)}</span>
+                <span>Interest {num(c.interestingness_score)}</span>
+                <span>Rarity {num(c.rarity_score)}</span>
+                <span>Original {num(c.originality_score)}</span>
+                <span>Outlier +{num(c.outlier_score)}</span>
+                <span>Clickbait {num(c.clickbait_penalty)}</span>
+                <span>Trust {num(c.trustworthiness_score)}</span>
               </div>
+
+              {c.ai_explanation && (
+                <p className="display text-[15px] mt-3 leading-relaxed" style={{ color: 'var(--ink-muted)' }}>
+                  {c.ai_explanation}
+                </p>
+              )}
             </div>
-            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-600 font-mono">
-              <span className="font-bold">Diamond {num(c.diamond_score)}</span>
-              <span>Quality {num(c.quality_score)}</span>
-              <span>Interest {num(c.interestingness_score)}</span>
-              <span>Rarity {num(c.rarity_score)}</span>
-              <span>Original {num(c.originality_score)}</span>
-              <span>Outlier +{num(c.outlier_score)}</span>
-              <span>Clickbait {num(c.clickbait_penalty)}</span>
-              <span>Trust {num(c.trustworthiness_score)}</span>
+          ))}
+        </div>
+
+        {/* Source scoreboard */}
+        {sources.length > 0 && (
+          <section className="mt-16">
+            <h2 className="display text-2xl">Source Scoreboard</h2>
+            <p className="mt-2 mb-5 text-[15px]" style={{ color: 'var(--ink-muted)' }}>
+              A high never-seen rate with low 7-day growth means we surfaced something the
+              internet was not going to deliver on its own. Growth of 3x or more means we
+              front-ran a blowup.
+            </p>
+            <div className="overflow-x-auto" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
+              <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr className="label" style={{ color: 'var(--ink-faint)' }}>
+                    <th style={headCell}>Source</th>
+                    <th style={headCell}>Type</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Cands</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Rej</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Avg Diamond</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Featured</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Never-Seen</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Avg 7d</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Blowups</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sources.map(s => (
+                    <tr key={`${s.creator_name}|${s.source_type}`}>
+                      <td style={{ ...cell, fontWeight: 600 }}>{s.creator_name}</td>
+                      <td style={{ ...cell, color: 'var(--ink-muted)' }}>{s.source_type}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{s.candidates}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{s.rejected}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{s.avg_diamond ?? "–"}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{s.picks_featured}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>
+                        {s.never_seen_rate != null ? `${Math.round(s.never_seen_rate * 100)}%` : "–"}
+                      </td>
+                      <td style={{ ...cell, textAlign: 'right' }}>
+                        {s.avg_growth_ratio != null ? `${s.avg_growth_ratio}x` : "–"}
+                      </td>
+                      <td style={{ ...cell, textAlign: 'right' }}>
+                        {s.outcomes_checked > 0 ? `${s.blowups}/${s.outcomes_checked}` : "–"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            {c.ai_explanation && (
-              <p className="mt-2 text-sm text-gray-600 font-serif italic">{c.ai_explanation}</p>
-            )}
-          </div>
-        ))}
+          </section>
+        )}
+
+        {/* Outcomes */}
+        {outcomes.length > 0 && (
+          <section className="mt-16 mb-16">
+            <h2 className="display text-2xl">Pick Outcomes</h2>
+            <p className="mt-2 mb-5 text-[15px]" style={{ color: 'var(--ink-muted)' }}>
+              Score breakdown against the 7-day view delta for every featured pick &mdash;
+              the raw data for tuning the Diamond Score weights.
+            </p>
+            <div className="overflow-x-auto" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
+              <table className="w-full text-sm whitespace-nowrap" style={{ borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr className="label" style={{ color: 'var(--ink-faint)' }}>
+                    <th style={headCell}>Featured</th>
+                    <th style={headCell}>Title</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Views@</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>+7d</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Growth</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>N/K</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Dia</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Qua</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Int</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Rar</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Ori</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Out</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Clk</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {outcomes.map(o => (
+                    <tr key={o.hourly_id}>
+                      <td style={{ ...cell, color: 'var(--ink-muted)' }}>{o.publish_time.split(".")[0].replace("T", " ")}</td>
+                      <td style={{ ...cell, fontWeight: 600, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }} title={o.title ?? undefined}>
+                        {o.title || "(removed)"}
+                      </td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{compact(o.views_at_feature)}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{compact(o.views_after_7d)}</td>
+                      <td style={{ ...cell, textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>
+                        {o.growth_ratio != null ? `${o.growth_ratio}x` : "–"}
+                      </td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{o.never_seen}/{o.knew_already}</td>
+                      <td style={{ ...cell, textAlign: 'right', fontWeight: 700 }}>{num(o.diamond_score)}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{num(o.quality_score)}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{num(o.interestingness_score)}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{num(o.rarity_score)}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{num(o.originality_score)}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{num(o.outlier_score)}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{num(o.clickbait_penalty)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
       </div>
-
-      {sources.length > 0 && (
-        <section className="max-w-5xl mx-auto mt-16">
-          <h2 className="text-2xl font-medium tracking-tight">Source Scoreboard</h2>
-          <p className="text-sm text-gray-500 mt-1 mb-4">
-            Incrementality per source: a high never-seen rate with a low 7-day growth ratio means
-            we surfaced something the internet wasn&apos;t going to deliver. Growth ≥3x = we frontran a blowup.
-          </p>
-          <div className="overflow-x-auto border border-gray-200 bg-white">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wider text-gray-500 border-b border-gray-200">
-                  <th className="p-3">Source</th>
-                  <th className="p-3">Type</th>
-                  <th className="p-3 text-right">Candidates</th>
-                  <th className="p-3 text-right">Rejected</th>
-                  <th className="p-3 text-right">Avg Diamond</th>
-                  <th className="p-3 text-right">Featured</th>
-                  <th className="p-3 text-right">Never-Seen %</th>
-                  <th className="p-3 text-right">Avg 7d Growth</th>
-                  <th className="p-3 text-right">Blowups (≥3x)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sources.map(s => (
-                  <tr key={`${s.creator_name}|${s.source_type}`} className="border-b border-gray-100">
-                    <td className="p-3 font-medium">{s.creator_name}</td>
-                    <td className="p-3 text-gray-500">{s.source_type}</td>
-                    <td className="p-3 text-right">{s.candidates}</td>
-                    <td className="p-3 text-right">{s.rejected}</td>
-                    <td className="p-3 text-right">{s.avg_diamond ?? "–"}</td>
-                    <td className="p-3 text-right">{s.picks_featured}</td>
-                    <td className="p-3 text-right">{s.never_seen_rate != null ? `${Math.round(s.never_seen_rate * 100)}%` : "–"}</td>
-                    <td className="p-3 text-right">{s.avg_growth_ratio != null ? `${s.avg_growth_ratio}x` : "–"}</td>
-                    <td className="p-3 text-right">{s.outcomes_checked > 0 ? `${s.blowups}/${s.outcomes_checked}` : "–"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {outcomes.length > 0 && (
-        <section className="max-w-5xl mx-auto mt-16">
-          <h2 className="text-2xl font-medium tracking-tight">Pick Outcomes</h2>
-          <p className="text-sm text-gray-500 mt-1 mb-4">
-            Score breakdown vs. 7-day view delta per featured pick — the raw data for tuning
-            the Diamond Score weights. Growth fills in once each pick passes the 7-day check.
-          </p>
-          <div className="overflow-x-auto border border-gray-200 bg-white">
-            <table className="w-full text-sm whitespace-nowrap">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wider text-gray-500 border-b border-gray-200">
-                  <th className="p-3">Featured</th>
-                  <th className="p-3">Title</th>
-                  <th className="p-3 text-right">Views@Feature</th>
-                  <th className="p-3 text-right">Views+7d</th>
-                  <th className="p-3 text-right">Growth</th>
-                  <th className="p-3 text-right">Never/Knew</th>
-                  <th className="p-3 text-right">Dia</th>
-                  <th className="p-3 text-right">Qua</th>
-                  <th className="p-3 text-right">Int</th>
-                  <th className="p-3 text-right">Rar</th>
-                  <th className="p-3 text-right">Ori</th>
-                  <th className="p-3 text-right">Out</th>
-                  <th className="p-3 text-right">Clk</th>
-                </tr>
-              </thead>
-              <tbody>
-                {outcomes.map(o => (
-                  <tr key={o.hourly_id} className="border-b border-gray-100">
-                    <td className="p-3 text-gray-500">{o.publish_time.split(".")[0]}</td>
-                    <td className="p-3 font-medium max-w-xs overflow-hidden text-ellipsis" title={o.title ?? undefined}>
-                      {o.title || "(removed)"}
-                    </td>
-                    <td className="p-3 text-right">{compact(o.views_at_feature)}</td>
-                    <td className="p-3 text-right">{compact(o.views_after_7d)}</td>
-                    <td className="p-3 text-right font-bold">{o.growth_ratio != null ? `${o.growth_ratio}x` : "–"}</td>
-                    <td className="p-3 text-right">{o.never_seen}/{o.knew_already}</td>
-                    <td className="p-3 text-right font-bold">{num(o.diamond_score)}</td>
-                    <td className="p-3 text-right">{num(o.quality_score)}</td>
-                    <td className="p-3 text-right">{num(o.interestingness_score)}</td>
-                    <td className="p-3 text-right">{num(o.rarity_score)}</td>
-                    <td className="p-3 text-right">{num(o.originality_score)}</td>
-                    <td className="p-3 text-right">{num(o.outlier_score)}</td>
-                    <td className="p-3 text-right">{num(o.clickbait_penalty)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
     </main>
   );
 }

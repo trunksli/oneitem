@@ -17,7 +17,7 @@ interface ArchiveEntry {
 }
 
 function formatHour(publishTime: string): string {
-  // Stored as UTC "YYYY-MM-DD HH:MM:SS.ffffff"; render in the viewer's timezone
+  // Stored as UTC ("YYYY-MM-DDTHH:MM:SS"); rendered in the viewer's timezone.
   const date = new Date(publishTime.replace(" ", "T").split(".")[0] + "Z");
   if (isNaN(date.getTime())) return publishTime;
   return date.toLocaleString('en-US', {
@@ -43,57 +43,71 @@ export default function Archive() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#FDFDFD] text-[#111111] font-sans p-6 md:p-16">
-      <header className="max-w-3xl mx-auto mb-12 flex justify-between items-end">
-        <div>
-          <a href="/" className="text-xl font-bold tracking-tighter hover:text-gray-500 transition-colors">ONE</a>
-          <h1 className="text-3xl md:text-4xl font-medium tracking-tight mt-2">Past Diamonds</h1>
-          <p className="text-sm text-gray-500 mt-1">Every hour&apos;s featured pick, newest first.</p>
-        </div>
-        <a href="/" className="text-sm font-bold tracking-widest uppercase hover:text-gray-500 transition-colors">
-          Now Playing →
+    <main className="min-h-screen" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
+
+      <header
+        className="w-full flex justify-between items-center gap-4 px-6 md:px-10 py-4"
+        style={{ borderBottom: '2px solid var(--rule)' }}
+      >
+        <a href="/" className="display text-2xl font-bold tracking-tight leading-none" style={{ color: 'var(--ink)', textDecoration: 'none' }}>
+          ONE
         </a>
+        <a href="/" className="label link-accent">Now Playing &#8594;</a>
       </header>
 
-      <div className="max-w-3xl mx-auto flex flex-col gap-8">
-        {loading ? (
-          <div className="text-gray-400 italic">Loading the archive...</div>
-        ) : entries.length === 0 ? (
-          <div className="text-gray-400 italic">Nothing featured yet — check back after the first hour.</div>
-        ) : (
-          entries.map(entry => (
-            <a
-              key={entry.hourly_id}
-              href={entry.url ?? undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group flex gap-5 items-start border-b border-gray-200 pb-8"
-            >
-              <div
-                className="w-32 h-20 md:w-44 md:h-28 bg-gray-100 border border-gray-200 shrink-0"
-                style={entry.thumbnail_url ? {
-                  backgroundImage: `url(${entry.thumbnail_url})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center'
-                } : {}}
-              />
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                  {formatHour(entry.publish_time)} &middot; {(entry.theme || "").replace(/_/g, " ")}
-                </div>
-                <h2 className="text-lg md:text-xl font-medium leading-snug mt-1 group-hover:text-gray-500 transition-colors">
-                  {entry.title || "(removed)"}
-                </h2>
-                <div className="text-sm text-gray-500 mt-1">{entry.creator_name}</div>
-                {entry.editorial_explanation && (
-                  <p className="text-sm text-gray-600 font-serif italic mt-2 line-clamp-2">
-                    {entry.editorial_explanation}
+      <div className="mx-auto px-6 md:px-10 py-10 md:py-16" style={{ maxWidth: 'var(--content-max)' }}>
+        <p className="label" style={{ color: 'var(--ink-faint)' }}>The Archive</p>
+        <h1 className="display mt-3 text-3xl md:text-4xl leading-tight">Past Diamonds</h1>
+        <p className="mt-2 text-[15px]" style={{ color: 'var(--ink-muted)' }}>
+          Every hour we have featured, newest first.
+        </p>
+
+        <div className="mt-10 flex flex-col">
+          {loading ? (
+            <p className="label" style={{ color: 'var(--ink-faint)' }}>Loading</p>
+          ) : entries.length === 0 ? (
+            <p className="text-[15px]" style={{ color: 'var(--ink-muted)' }}>
+              Nothing has been featured yet. Check back after the first hour.
+            </p>
+          ) : (
+            entries.map(entry => (
+              <a
+                key={entry.hourly_id}
+                href={entry.url ?? undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex gap-5 items-start py-6"
+                style={{ borderBottom: '1px solid var(--line)', textDecoration: 'none', color: 'inherit' }}
+              >
+                <div
+                  className="w-28 h-[63px] md:w-40 md:h-[90px] shrink-0"
+                  style={{
+                    border: '1px solid var(--line-strong)',
+                    background: entry.thumbnail_url
+                      ? `url(${entry.thumbnail_url}) center/cover`
+                      : 'var(--sunken)',
+                  }}
+                />
+                <div className="min-w-0">
+                  <p className="label" style={{ color: 'var(--accent)' }}>
+                    {formatHour(entry.publish_time)} / {(entry.theme || "").replace(/_/g, " ")}
                   </p>
-                )}
-              </div>
-            </a>
-          ))
-        )}
+                  <h2 className="display text-lg md:text-xl leading-snug mt-1">
+                    {entry.title || "(removed)"}
+                  </h2>
+                  <p className="text-sm mt-1" style={{ color: 'var(--ink-muted)' }}>
+                    {entry.creator_name}
+                  </p>
+                  {entry.editorial_explanation && (
+                    <p className="display text-[15px] mt-2 leading-relaxed" style={{ color: 'var(--ink-faint)' }}>
+                      {entry.editorial_explanation}
+                    </p>
+                  )}
+                </div>
+              </a>
+            ))
+          )}
+        </div>
       </div>
     </main>
   );

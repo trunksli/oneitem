@@ -22,7 +22,7 @@ git remote add origin https://github.com/<you>/<repo>.git
 ```
 
 ```bash
-git push -u origin master
+git push -u origin main
 ```
 
 Secrets are safe: `.gitignore` excludes `.env`, the SQLite database, `venv/`,
@@ -129,7 +129,17 @@ filtering, or delete tooling yet. Worth knowing before sharing the link widely.
 ## Running locally
 
 ```bash
-cd backend && venv/Scripts/python.exe -m uvicorn app.main:app --reload --port 8000
+cd backend && venv/Scripts/python.exe dev_server.py
+```
+
+`dev_server.py` exists because this machine runs Python 3.6.0, which cannot
+import pydantic (and therefore cannot run FastAPI) -- it predates `typing.Deque`
+from 3.6.1. The dev server delegates to the same `app/queries.py` the deployed
+FastAPI app uses, so behaviour cannot drift. On a modern Python, run the real
+thing instead:
+
+```bash
+cd backend && python -m uvicorn app.main:app --reload --port 8000
 ```
 
 ```bash

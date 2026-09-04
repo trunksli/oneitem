@@ -46,6 +46,7 @@ export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [feedbackGiven, setFeedbackGiven] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   // A ?pick=<id> URL pins the page to one archived hour instead of "now".
   const pinnedId = usePickParam();
@@ -56,6 +57,7 @@ export default function Home() {
     fetch(pickId ? `${API_BASE}/pick/${encodeURIComponent(pickId)}` : `${API_BASE}/hourly`)
       .then(res => res.json())
       .then((data: HourlyResponse) => {
+        setLoadFailed(false);
         setHourlyOne(prev => {
           // New hour, new item: reset the player and feedback state
           if (prev?.hourly?.id && data?.hourly?.id && prev.hourly.id !== data.hourly.id) {
@@ -68,6 +70,7 @@ export default function Home() {
       })
       .catch(err => {
         console.error(err);
+        setLoadFailed(true);
         setLoading(false);
       });
   }, []);
@@ -144,7 +147,7 @@ export default function Home() {
   if (loading) {
     return (
       <main className="min-h-screen flex flex-col">
-        <ApiWarning />
+        <ApiWarning failed={loadFailed} />
         <div className="flex-1 flex items-center justify-center">
           <span className="label" style={{ color: 'var(--ink-faint)' }}>Loading ONE</span>
         </div>
@@ -187,7 +190,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
-      <ApiWarning />
+      <ApiWarning failed={loadFailed} />
 
       {/* Ribbon */}
       <header

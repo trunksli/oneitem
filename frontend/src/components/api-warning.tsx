@@ -1,37 +1,28 @@
 "use client";
 
-import { useSyncExternalStore } from 'react';
-import { isApiMisconfigured } from '@/lib/api';
-
-const noopSubscribe = () => () => {};
+import { API_BASE } from '@/lib/api';
 
 /**
- * Shown when the site was built without NEXT_PUBLIC_API_URL, which otherwise
- * fails silently: the developer's own browser reaches their local dev server, so
- * the deployment looks fine to them while being broken for everyone else.
+ * Shown when the API cannot be reached.
  *
- * The check needs the hostname, so it is client-only; the server snapshot is
- * false to keep the prerendered HTML and first client render in agreement.
+ * Without this, an outage rendered as normal curation: the fetch failed, the
+ * page fell through to its empty state, and the site cheerfully claimed it was
+ * "discovering something amazing" while actually being down.
  */
-export default function ApiWarning() {
-  const broken = useSyncExternalStore(
-    noopSubscribe,
-    () => isApiMisconfigured(),
-    () => false,
-  );
-
-  if (!broken) return null;
+export default function ApiWarning({ failed = false }: { failed?: boolean }) {
+  if (!failed) return null;
 
   return (
     <div
       className="w-full px-6 md:px-10 py-3"
       style={{ background: 'var(--danger)', color: '#FFF8F4' }}
     >
-      <p className="label">API not configured</p>
+      <p className="label">Cannot reach the API</p>
       <p className="text-sm mt-1">
-        This build has no <code>NEXT_PUBLIC_API_URL</code>, so it cannot load content.
-        Set it on the static site to the API&apos;s URL and redeploy &mdash; it is baked
-        in at build time, so a restart alone will not pick it up.
+        Nothing can load right now. The site is trying <code>{API_BASE}</code>.
+        If that address is wrong, set <code>NEXT_PUBLIC_API_URL</code> on the static
+        site and redeploy &mdash; it is baked in at build time, so saving it alone
+        will not take effect.
       </p>
     </div>
   );

@@ -85,8 +85,9 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
 - [ ] **Chat has no per-item context** — a single daily lobby means comments about
       three picks ago land under the current one. Consider per-pick threads with a
       persistent daily room alongside.
-- [ ] **API failure looks like normal curation** — the error path falls through to
-      the "discovering something amazing" state. Needs a real error state.
+- [x] ~~API failure looks like normal curation~~ — a red banner now names the API
+      it tried and how to change it. The underlying empty-state copy is still
+      over-cheerful (see Content design).
 - [ ] Feedback is irreversible with no undo and no explanation of what it does.
 
 ## Content design
@@ -144,5 +145,10 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
       export, so metadata cannot vary per pick. Moving the frontend to a Node
       service on Render would unlock real link previews — weigh against the cost
       and the simplicity of static hosting.
+- [ ] `NEXT_PUBLIC_API_URL` now falls back to the known production API when the
+      page is served from anywhere but localhost, so a missing build variable no
+      longer breaks the deployment. The variable still wins when set. If the API
+      service is ever renamed, update `PRODUCTION_API` in `frontend/src/lib/api.ts`
+      or set the variable properly.
 - [ ] Confirm the Postgres upgrade landed; `/status` reports the active backend.
       The archive and all incrementality data live there.

@@ -31,6 +31,7 @@ function formatHour(publishTime: string): string {
 export default function Archive() {
   const [entries, setEntries] = useState<ArchiveEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE}/archive`)
@@ -41,13 +42,14 @@ export default function Archive() {
       })
       .catch(err => {
         console.error(err);
+        setLoadFailed(true);
         setLoading(false);
       });
   }, []);
 
   return (
     <main className="min-h-screen" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
-      <ApiWarning />
+      <ApiWarning failed={loadFailed} />
 
 
       <header

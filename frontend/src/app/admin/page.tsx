@@ -80,6 +80,7 @@ export default function Admin() {
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [status, setStatus] = useState("Enter the admin token to load the queue.");
   const [busy, setBusy] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const loadQueue = useCallback(async (adminToken: string) => {
     if (!adminToken) return;
@@ -108,8 +109,10 @@ export default function Admin() {
         const outcomeData = await outcomesRes.json();
         setOutcomes(Array.isArray(outcomeData) ? outcomeData : []);
       }
+      setLoadFailed(false);
     } catch (err) {
       console.error(err);
+      setLoadFailed(true);
       setStatus("Could not reach the API.");
     }
   }, []);
@@ -156,7 +159,7 @@ export default function Admin() {
 
   return (
     <main className="min-h-screen" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
-      <ApiWarning />
+      <ApiWarning failed={loadFailed} />
 
 
       <header

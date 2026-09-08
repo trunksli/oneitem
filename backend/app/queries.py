@@ -14,6 +14,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from . import models
+from .themes import DEFAULT_THEME, normalize_theme
 
 MAX_COMMENT_LENGTH = 500
 MAX_DISPLAY_NAME_LENGTH = 40
@@ -63,6 +64,8 @@ def _candidate_summary(candidate):
         "thumbnail_url": _safe_url(candidate.thumbnail_url),
         "source_type": _plain(candidate.source_type),
         "source_id": candidate.source_id,
+        "preview_text": candidate.preview_text,
+        "tone": candidate.tone,
     }
 
 
@@ -109,7 +112,7 @@ def promote_next_pick(db):
 
     hourly = models.HourlyOne(
         publish_time=current_hour,
-        theme=top_candidate.theme or models.Theme.RANDOM,
+        theme=top_candidate.theme or DEFAULT_THEME,
         candidate_id=top_candidate.id,
         editorial_explanation=top_candidate.ai_explanation,
         views_at_feature=top_candidate.view_count,  # snapshot for the 7-day delta
@@ -359,6 +362,7 @@ def get_archive(db, limit=100):
             "candidate_id": hourly.candidate_id,
             "title": None, "creator_name": None, "creator_url": None,
             "url": None, "thumbnail_url": None, "source_type": None, "source_id": None,
+            "preview_text": None, "tone": None,
         }
         row.update(_candidate_summary(candidates.get(hourly.candidate_id)))
         result.append(row)
@@ -382,7 +386,8 @@ def get_queue(db, limit=10):
     ).order_by(models.ContentCandidate.diamond_score.desc()).limit(max(1, min(limit, 50))).all()
     return [{
         "id": c.id, "title": c.title, "creator_name": c.creator_name, "url": _safe_url(c.url),
-        "source_type": _plain(c.source_type), "theme": _plain(c.theme),
+        "source_type": _plain(c.source_type), "theme": _plain(c.theme), "tone": c.tone,
+        "preview_text": c.preview_text, "thumbnail_url": _safe_url(c.thumbnail_url),
         "view_count": c.view_count, "subscriber_count": c.subscriber_count,
         "upload_date": _plain(c.upload_date),
         "diamond_score": c.diamond_score, "quality_score": c.quality_score,
@@ -505,14 +510,92 @@ def get_source_stats(db):
 
 # --------------------------------------------------------------- admin actions
 
-def feature_candidate(db, candidate_id):
-    """Override the current hour with a chosen candidate (Phase A manual curation)."""
+def get_schedule(db, hours=24):
+    """The next `hours` hourly slots, filled or empty.
+
+    The curation runway: lets an editor see what is queued to go live before it
+    does, rather than finding out afterwards.
+    """
+    now = datetime.datetime.utcnow()
+    start = now.replace(minute=0, second=0, microsecond=0)
+    end = start + datetime.timedelta(hours=max(1, min(hours, 72)))
+
+    scheduled = db.query(models.HourlyOne).filter(
+        models.HourlyOne.publish_time >= start,
+        models.HourlyOne.publish_time < end,
+    ).all()
+    by_hour = {h.publish_time: h for h in scheduled}
+    candidates = _candidates_by_id(db, scheduled)
+
+    slots = []
+    for offset in range(max(1, min(hours, 72))):
+        slot_time = start + datetime.timedelta(hours=offset)
+        hourly = by_hour.get(slot_time)
+        candidate = candidates.get(hourly.candidate_id) if hourly is not None else None
+        slots.append({
+            "publish_time": _plain(slot_time),
+            "is_current_hour": offset == 0,
+            "hourly_id": hourly.id if hourly is not None else None,
+            "theme": _plain(hourly.theme) if hourly is not None else None,
+            "candidate_id": hourly.candidate_id if hourly is not None else None,
+            "title": candidate.title if candidate is not None else None,
+            "creator_name": candidate.creator_name if candidate is not None else None,
+            "thumbnail_url": _safe_url(candidate.thumbnail_url) if candidate is not None else None,
+            "source_type": _plain(candidate.source_type) if candidate is not None else None,
+            "diamond_score": candidate.diamond_score if candidate is not None else None,
+        })
+    return slots
+
+
+def unschedule(db, hourly_id):
+    """Clear a slot and return its candidate to the review queue.
+
+    Refuses to unpick an hour that has already gone live -- the archive is a
+    record of what was actually published, not what we wish we had published.
+    """
+    hourly = db.query(models.HourlyOne).filter(models.HourlyOne.id == hourly_id).first()
+    if hourly is None:
+        raise NotFound("No such scheduled hour")
+
+    current_hour = datetime.datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    if hourly.publish_time < current_hour:
+        raise ValueError("That hour has already been published")
+
+    candidate = db.query(models.ContentCandidate).filter(
+        models.ContentCandidate.id == hourly.candidate_id).first()
+    if candidate is not None:
+        candidate.status = models.Status.PENDING_REVIEW
+    db.delete(hourly)
+    db.commit()
+    return {"hourly_id": hourly_id, "freed": _plain(hourly.publish_time)}
+
+
+def feature_candidate(db, candidate_id, publish_time=None):
+    """Put a chosen candidate into a specific hour (default: the current one).
+
+    `publish_time` accepts an ISO string or datetime and is floored to the hour,
+    so upcoming slots can be curated ahead of time.
+    """
     candidate = db.query(models.ContentCandidate).filter(
         models.ContentCandidate.id == candidate_id).first()
     if candidate is None:
         raise NotFound("Candidate not found")
 
-    hour_start = datetime.datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    current_hour = datetime.datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    if publish_time is None:
+        hour_start = current_hour
+    else:
+        if isinstance(publish_time, str):
+            try:
+                parsed = datetime.datetime.strptime(
+                    publish_time.replace("Z", "").split(".")[0], "%Y-%m-%dT%H:%M:%S")
+            except ValueError:
+                raise ValueError("publish_time must be ISO format, e.g. 2026-09-08T14:00:00")
+        else:
+            parsed = publish_time
+        hour_start = parsed.replace(minute=0, second=0, microsecond=0)
+        if hour_start < current_hour:
+            raise ValueError("Cannot schedule into a past hour")
     hourly = db.query(models.HourlyOne).filter(
         models.HourlyOne.publish_time == hour_start).first()
 
@@ -522,7 +605,7 @@ def feature_candidate(db, candidate_id):
         if displaced is not None and displaced.id != candidate.id:
             displaced.status = models.Status.PENDING_REVIEW
         hourly.candidate_id = candidate.id
-        hourly.theme = candidate.theme or models.Theme.RANDOM
+        hourly.theme = candidate.theme or DEFAULT_THEME
         hourly.editorial_explanation = candidate.ai_explanation
         hourly.views_at_feature = candidate.view_count
         hourly.views_after_7d = None
@@ -530,7 +613,7 @@ def feature_candidate(db, candidate_id):
     else:
         hourly = models.HourlyOne(
             publish_time=hour_start,
-            theme=candidate.theme or models.Theme.RANDOM,
+            theme=candidate.theme or DEFAULT_THEME,
             candidate_id=candidate.id,
             editorial_explanation=candidate.ai_explanation,
             views_at_feature=candidate.view_count,

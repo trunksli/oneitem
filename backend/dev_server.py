@@ -22,7 +22,8 @@ from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
 load_dotenv()
 
-from app import database, models, queries
+from app import auth, database, models, queries
+from app.migrations import ensure_schema
 
 MAX_BODY_BYTES = 16 * 1024
 
@@ -55,8 +56,7 @@ class Handler(BaseHTTPRequestHandler):
         return data, None
 
     def _is_admin(self):
-        token = os.getenv("ADMIN_TOKEN")
-        return bool(token) and self.headers.get("X-Admin-Token") == token
+        return auth.verify_token(self.headers.get("X-Admin-Token"))
 
     def log_message(self, fmt, *args):
         print("%s - %s" % (self.address_string(), fmt % args))
@@ -99,6 +99,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(queries.get_outcomes(db))
                 elif path == "/admin/sources":
                     self._send(queries.get_source_stats(db))
+                elif path == "/admin/schedule":
+                    self._send(queries.get_schedule(db, as_int("hours", 24)))
                 else:
                     self._send({"detail": "Not found"}, 404)
             else:
@@ -126,11 +128,23 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/feedback":
                 self._send(queries.create_feedback(
                     db, data.get("hourly_one_id"), data.get("seen_before")), 201)
+            elif path == "/admin/login":
+                if not auth.is_configured():
+                    self._send({"detail": "Admin access is not configured "
+                                          "(set ADMIN_USERNAME, ADMIN_PASSWORD and ADMIN_TOKEN)"}, 503)
+                elif auth.check_credentials(data.get("username"), data.get("password")):
+                    token, expires_at = auth.issue_token()
+                    self._send({"token": token, "expires_at": expires_at})
+                else:
+                    self._send({"detail": "Incorrect username or password"}, 401)
             elif path.startswith("/admin/"):
                 if not self._is_admin():
-                    self._send({"detail": "Admin token required"}, 403)
+                    self._send({"detail": "Sign in required"}, 403)
                 elif path == "/admin/schedule":
-                    self._send(queries.feature_candidate(db, data.get("candidate_id")), 201)
+                    self._send(queries.feature_candidate(
+                        db, data.get("candidate_id"), data.get("publish_time")), 201)
+                elif path == "/admin/unschedule":
+                    self._send(queries.unschedule(db, data.get("hourly_id")))
                 elif path == "/admin/reject":
                     self._send(queries.reject_candidate(db, data.get("candidate_id")))
                 else:
@@ -155,6 +169,7 @@ class ThreadingServer(ThreadingMixIn, HTTPServer):
 
 if __name__ == "__main__":
     models.Base.metadata.create_all(bind=database.engine)
+    ensure_schema(database.engine)
     # Deliberately not PORT: this repo's .env carries a stale PORT=3000 from an
     # old Express setup, which also collides with the Next.js dev server.
     port = int(os.getenv("ONE_DEV_PORT", "8000"))

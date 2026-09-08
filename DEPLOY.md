@@ -63,7 +63,9 @@ Set on **`one-api`**:
 | `DATABASE_URL` | The Postgres Internal Database URL |
 | `GEMINI_API_KEY` | From Google AI Studio |
 | `YOUTUBE_API_KEY` | From Google Cloud Console |
-| `ADMIN_TOKEN` | Any long random string — needed to open `/admin/` |
+| `ADMIN_TOKEN` | Any long random string — signs admin sessions |
+| `ADMIN_USERNAME` | Your sign-in name for `/admin/` |
+| `ADMIN_PASSWORD` | Your sign-in password for `/admin/` |
 | `ALLOWED_ORIGINS` | The frontend URL, e.g. `https://one-web.onrender.com` |
 | `RUN_SCHEDULER` | `1` |
 
@@ -112,9 +114,10 @@ Background Worker instead.
 back to a local SQLite file, but Render's free filesystem is ephemeral — the
 archive and the 7-day view deltas would reset on every deploy. Use Postgres.
 
-**`/admin/` is reachable by anyone who finds the URL.** It is useless without
-the token (every admin endpoint returns 403, and the endpoints are disabled
-outright when `ADMIN_TOKEN` is unset), but it is not a secret page.
+**`/admin/` is reachable by anyone who finds the URL.** It shows a sign-in form
+and every endpoint behind it returns 403 without a valid session, but it is not a
+secret page. Sessions expire after `ADMIN_SESSION_HOURS` and live in
+sessionStorage, so they die with the browser tab.
 
 **If the Python build fails on a wheel** (usually `psycopg2-binary` on a
 brand-new interpreter), pin the runtime: add `PYTHON_VERSION` = `3.12.8` to the

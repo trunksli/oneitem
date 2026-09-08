@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { MessageSquare, X, Send, Play, BookOpen, Link2, Check } from 'lucide-react';
 import { API_BASE } from '@/lib/api';
 import ApiWarning from '@/components/api-warning';
+import Thumbnail from '@/components/thumbnail';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { safeExternalUrl, permalinkFor } from '@/lib/url';
 import { usePickParam } from '@/lib/use-pick-param';
@@ -20,6 +21,8 @@ interface Candidate {
   creator_url?: string;
   ai_explanation: string;
   thumbnail_url: string;
+  preview_text?: string | null;
+  tone?: string | null;
 }
 
 interface HourlyResponse {
@@ -258,6 +261,12 @@ export default function Home() {
           ) : "The engine is selecting the next diamond."}
         </p>
 
+        {candidate?.preview_text && (
+          <p className="mt-5 text-[17px] leading-relaxed" style={{ color: 'var(--ink)' }}>
+            {candidate.preview_text}
+          </p>
+        )}
+
         {/* Media */}
         <div className="mt-8">
           {isPlaying && canEmbed ? (
@@ -281,12 +290,31 @@ export default function Home() {
               className="w-full aspect-video relative overflow-hidden"
               style={{
                 border: '1px solid var(--line-strong)',
-                background: candidate?.thumbnail_url
-                  ? `url(${candidate.thumbnail_url}) center/cover`
-                  : 'var(--sunken)',
+                background: 'var(--sunken)',
                 cursor: playable ? 'pointer' : 'default',
               }}
             >
+              <Thumbnail
+                src={candidate?.thumbnail_url}
+                alt={candidate?.title || ""}
+                className="absolute inset-0 w-full h-full"
+                fallback={
+                  // No image: show the opening of the piece rather than a blank
+                  // rectangle, so the gist is readable at a glance.
+                  <div className="h-full flex flex-col justify-center px-6 md:px-10 py-6">
+                    <p className="label" style={{ color: 'var(--accent)' }}>
+                      {candidate?.tone || candidate?.source_type || "Reading"}
+                    </p>
+                    <p className="display mt-2 text-lg md:text-2xl leading-snug"
+                       style={{ color: 'var(--ink)' }}>
+                      {candidate?.preview_text
+                        ? candidate.preview_text.slice(0, 220)
+                        : candidate?.title}
+                    </p>
+                  </div>
+                }
+              />
+
               {playable ? (
                 <div
                   className="absolute inset-0 flex items-center justify-center"

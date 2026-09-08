@@ -44,7 +44,7 @@ def seed(db):
         creator_name="Practical Engineering", creator_url="https://youtube.com/c/pe",
         description="d", thumbnail_url="https://img/1.jpg", view_count=1000,
         subscriber_count=500000, upload_date=now - datetime.timedelta(days=30),
-        discovered_date=now, status=models.Status.PUBLISHED, theme=models.Theme.ENGINEERING,
+        discovered_date=now, status=models.Status.PUBLISHED, theme="Engineering",
         diamond_score=80.0, quality_score=90.0, interestingness_score=85.0,
         rarity_score=100.0, originality_score=70.0, outlier_score=0.0,
         clickbait_penalty=0.0, trustworthiness_score=95.0,
@@ -56,7 +56,7 @@ def seed(db):
         creator_name="Quanta Magazine", creator_url="https://quanta.org/feed",
         description="d", thumbnail_url="", view_count=None, subscriber_count=None,
         upload_date=now - datetime.timedelta(days=2), discovered_date=now,
-        status=models.Status.PENDING_REVIEW, theme=models.Theme.BIOSCIENCE,
+        status=models.Status.PENDING_REVIEW, theme="Bioscience",
         diamond_score=88.0, quality_score=92.0, interestingness_score=90.0,
         rarity_score=60.0, originality_score=85.0, outlier_score=0.0,
         clickbait_penalty=5.0, trustworthiness_score=90.0,
@@ -68,17 +68,17 @@ def seed(db):
         creator_name="Practical Engineering", creator_url="https://youtube.com/c/pe",
         description="d", thumbnail_url="", view_count=10, subscriber_count=500000,
         upload_date=now, discovered_date=now, status=models.Status.REJECTED,
-        theme=models.Theme.ENGINEERING, diamond_score=0.0, trustworthiness_score=10.0,
+        theme="Engineering", diamond_score=0.0, trustworthiness_score=10.0,
     )
     # Featured 8 days ago with a recorded outcome: 1000 -> 5000 views = 5x blowup
     old_hour = hour_start - datetime.timedelta(days=8)
     past = models.HourlyOne(
-        id="hourly-past", publish_time=old_hour, theme=models.Theme.ENGINEERING,
+        id="hourly-past", publish_time=old_hour, theme="Engineering",
         candidate_id="cand-featured", editorial_explanation="Because it is good.",
         views_at_feature=1000, views_after_7d=5000, outcome_checked_at=now,
     )
     current = models.HourlyOne(
-        id="hourly-now", publish_time=hour_start, theme=models.Theme.ENGINEERING,
+        id="hourly-now", publish_time=hour_start, theme="Engineering",
         candidate_id="cand-featured", editorial_explanation="Because it is good.",
         views_at_feature=1000,
     )
@@ -189,9 +189,76 @@ def main():
               db.query(models.ContentCandidate).get("cand-queued").status == models.Status.PUBLISHED)
         current = db.query(models.HourlyOne).get("hourly-now")
         check("resets outcome tracking", current.views_after_7d is None and current.outcome_checked_at is None)
-        check("theme follows the new pick", current.theme == models.Theme.BIOSCIENCE)
+        check("theme follows the new pick", current.theme == "Bioscience")
         check("hourly now serves the override",
               queries.get_hourly(db)["candidate"]["title"] == "A Queued Article")
+
+        print("\nadmin auth")
+        os.environ["ADMIN_TOKEN"] = "test-secret"
+        os.environ["ADMIN_USERNAME"] = "michael"
+        os.environ["ADMIN_PASSWORD"] = "correct horse"
+        from app import auth
+        check("configured when credentials are set", auth.is_configured() is True)
+        check("accepts the right credentials", auth.check_credentials("michael", "correct horse"))
+        check("rejects a wrong password", not auth.check_credentials("michael", "nope"))
+        check("rejects a wrong username", not auth.check_credentials("eve", "correct horse"))
+        session_token, _ = auth.issue_token()
+        check("issued token verifies", auth.verify_token(session_token))
+        check("raw ADMIN_TOKEN still works for scripts", auth.verify_token("test-secret"))
+        check("rejects a tampered token", not auth.verify_token(session_token[:-4] + "beef"))
+        check("rejects junk", not auth.verify_token("garbage"))
+        check("rejects empty", not auth.verify_token(""))
+
+        print("\n24-hour schedule runway")
+        slots = queries.get_schedule(db, 24)
+        check("returns 24 slots", len(slots) == 24, str(len(slots)))
+        check("first slot is the current hour", slots[0]["is_current_hour"] is True)
+        check("current hour shows its pick", slots[0]["title"] is not None)
+        check("later slots start empty", slots[5]["hourly_id"] is None)
+
+        future_hour = slots[3]["publish_time"]
+        queries.feature_candidate(db, "cand-queued", future_hour)
+        refreshed = queries.get_schedule(db, 24)
+        check("candidate lands in the chosen future hour",
+              refreshed[3]["title"] == "A Queued Article", str(refreshed[3]["title"]))
+        # The live view must still serve the current hour, not the future booking
+        check("a future pick is not served as live",
+              queries.get_hourly(db)["hourly"]["id"] != refreshed[3]["hourly_id"])
+
+        queries.unschedule(db, refreshed[3]["hourly_id"])
+        check("unschedule frees the slot", queries.get_schedule(db, 24)[3]["hourly_id"] is None)
+        check("unscheduled candidate returns to the queue",
+              db.query(models.ContentCandidate).get("cand-queued").status == models.Status.PENDING_REVIEW)
+        # Restore the status the later sections expect: this candidate is still
+        # the current hour's published pick from the override test above.
+        db.query(models.ContentCandidate).get("cand-queued").status = models.Status.PUBLISHED
+        db.commit()
+        try:
+            queries.feature_candidate(db, "cand-queued", "2020-01-01T00:00:00")
+            check("refuses to schedule into the past", False)
+        except ValueError:
+            check("refuses to schedule into the past", True)
+        try:
+            queries.unschedule(db, "hourly-past")
+            check("refuses to unschedule an already published hour", False)
+        except ValueError:
+            check("refuses to unschedule an already published hour", True)
+
+        print("\npreview and thumbnail exposure")
+        # Attach the preview to whichever candidate is actually live right now,
+        # so this does not depend on which earlier test scheduled what.
+        live_id = queries.get_hourly(db)["candidate"]["id"]
+        live_row = db.query(models.ContentCandidate).get(live_id)
+        live_row.preview_text = "The opening two sentences of the piece."
+        live_row.tone = "Fascinating"
+        db.commit()
+        payload = queries.get_hourly(db)["candidate"]
+        check("hourly exposes preview_text", payload["preview_text"] is not None)
+        check("hourly exposes tone", payload["tone"] == "Fascinating")
+        arch = [a for a in queries.get_archive(db) if a["title"] == "A Featured Video"][0]
+        check("archive exposes preview_text", "preview_text" in arch)
+        check("queue exposes thumbnail and preview",
+              all("thumbnail_url" in c and "preview_text" in c for c in queries.get_queue(db, 50)))
 
         print("\nURL safety (third-party feed links)")
         evil = models.ContentCandidate(
@@ -200,12 +267,12 @@ def main():
             creator_name="Bad Feed", creator_url="javascript:void(0)",
             thumbnail_url="javascript:alert(1)", description="d",
             discovered_date=datetime.datetime.utcnow(),
-            status=models.Status.PENDING_REVIEW, theme=models.Theme.RANDOM,
+            status=models.Status.PENDING_REVIEW, theme="Curious",
             diamond_score=99.0, ai_explanation="Trust me.",
         )
         db.add(evil)
         db.add(models.HourlyOne(id="hourly-evil", publish_time=hour_now() - datetime.timedelta(days=1),
-                                theme=models.Theme.RANDOM, candidate_id="cand-evil"))
+                                theme="Curious", candidate_id="cand-evil"))
         db.commit()
 
         evil_queue = [c for c in queries.get_queue(db, 50) if c["id"] == "cand-evil"][0]

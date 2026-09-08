@@ -24,17 +24,9 @@ class SeenBefore(str, enum.Enum):
     SEEN_BEFORE = "SEEN_BEFORE"
     KNEW_ALREADY = "KNEW_ALREADY"
 
-class Theme(str, enum.Enum):
-    BIOSCIENCE = "Bioscience"
-    AI = "AI"
-    WEIRD_FOOD = "Weird Food"
-    ARCHITECTURE = "Architecture"
-    GAMING = "Gaming"
-    ODDBALL = "Oddball"
-    RANDOM = "Random"
-    HISTORY = "History"
-    ENGINEERING = "Engineering"
-    CULTURE = "Culture"
+# Themes are plain strings validated in app code, not a database enum -- see
+# app/themes.py. A native Postgres enum would need an ALTER TYPE migration every
+# time the taxonomy is tuned, and this is the knob most likely to change.
 
 class ContentCandidate(Base):
     __tablename__ = "content_candidates"
@@ -55,7 +47,9 @@ class ContentCandidate(Base):
     subscriber_count = Column(BigInteger, nullable=True)
     transcript = Column(Text, nullable=True)
     status = Column(Enum(Status), default=Status.PENDING_AI)
-    theme = Column(Enum(Theme), nullable=True)
+    theme = Column(String(40), nullable=True)
+    tone = Column(String(40), nullable=True)   # how it should feel, for pacing
+    preview_text = Column(Text, nullable=True) # the gist, shown without clicking through
     
     # Scores (0-100)
     quality_score = Column(Float, nullable=True)
@@ -77,7 +71,7 @@ class HourlyOne(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     publish_time = Column(DateTime, unique=True, index=True) # E.g. 2026-08-23 09:00:00
-    theme = Column(Enum(Theme), nullable=False)
+    theme = Column(String(40), nullable=True)
     candidate_id = Column(String(36), ForeignKey("content_candidates.id"))
     editorial_explanation = Column(Text, nullable=True)
     is_bandit_winner = Column(Boolean, default=False) # For future multi-armed bandit

@@ -26,8 +26,10 @@ Done in that pass and not repeated below: `javascript:` URL sanitation, the
       poisonable, including by accident. **[blocks learning]**
 - [ ] **No rate limiting** on `/comments` or `/feedback` — MEDIUM. Trivial to
       flood the lobby or the metrics.
-- [ ] **Admin token lives in `localStorage`**, never rotates or expires — MEDIUM.
-      Any XSS is full admin takeover. Consider a short-lived cookie.
+- [x] ~~Admin token lives in localStorage forever~~ — replaced by username +
+      password sign-in issuing an expiring HMAC session token held in
+      sessionStorage. The raw `ADMIN_TOKEN` still works for scripts, so an XSS
+      that reaches it is still full takeover; a cookie would close that.
 - [ ] Validate `thumbnail_url` before interpolating into `background: url(...)`
       — LOW. Now scheme-checked, but still unescaped inside CSS.
 - [ ] Confirm `ALLOWED_ORIGINS` is set in production (defaults to `*`).
@@ -56,8 +58,8 @@ Done in that pass and not repeated below: `javascript:` URL sanitation, the
 
 ## Accessibility (ADA / WCAG)
 
-- [ ] **Thumbnail has no text alternative** — it is a CSS background image
-      (WCAG 1.1.1). Use a real `<img>` with `alt`, or an equivalent label.
+- [x] ~~Thumbnail has no text alternative~~ — now a real `<img>` with `alt` via
+      `components/thumbnail.tsx`, which also falls back when an image 404s.
 - [ ] Add a skip-to-content link.
 - [ ] Full focus trap inside the open chat panel (Escape and focus return are
       done; tab cycling is not).
@@ -73,8 +75,8 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
       found it." Needs an about/manifesto surface or first-visit explanation.
 - [ ] **The hour is not felt** — no countdown, no rhythm, no scarcity. The core
       mechanic is decorative rather than structural.
-- [ ] **Articles have no visual treatment** — most picks are RSS items with no
-      thumbnail and render as a large empty rectangle. Needs a typographic card.
+- [x] ~~Articles have no visual treatment~~ — articles now carry the publisher's
+      og:image, and anything without one gets a typographic preview card.
 - [ ] Manual light/dark toggle (the palette exists; only the OS setting drives it).
 - [ ] Group the archive by day so the hourly rhythm is visible.
 

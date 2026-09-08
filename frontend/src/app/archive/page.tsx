@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { safeExternalUrl } from '@/lib/url';
 import { API_BASE } from '@/lib/api';
 import ApiWarning from '@/components/api-warning';
+import Thumbnail from '@/components/thumbnail';
 
 
 interface ArchiveEntry {
@@ -17,6 +18,8 @@ interface ArchiveEntry {
   url: string | null;
   thumbnail_url: string | null;
   source_type: string | null;
+  preview_text?: string | null;
+  tone?: string | null;
 }
 
 function formatHour(publishTime: string): string {
@@ -84,14 +87,18 @@ export default function Archive() {
                 className="flex gap-5 items-start py-6"
                 style={{ borderBottom: '1px solid var(--line)', textDecoration: 'none', color: 'inherit' }}
               >
-                <div
+                <Thumbnail
+                  src={entry.thumbnail_url}
+                  alt={entry.title || ""}
                   className="w-28 h-[63px] md:w-40 md:h-[90px] shrink-0"
-                  style={{
-                    border: '1px solid var(--line-strong)',
-                    background: entry.thumbnail_url
-                      ? `url(${entry.thumbnail_url}) center/cover`
-                      : 'var(--sunken)',
-                  }}
+                  style={{ border: '1px solid var(--line-strong)' }}
+                  fallback={
+                    <div className="h-full flex items-center justify-center px-2">
+                      <span className="label text-center" style={{ color: 'var(--accent)' }}>
+                        {entry.tone || entry.theme || "Reading"}
+                      </span>
+                    </div>
+                  }
                 />
                 <div className="min-w-0">
                   <p className="label" style={{ color: 'var(--accent)' }}>
@@ -103,9 +110,9 @@ export default function Archive() {
                   <p className="text-sm mt-1" style={{ color: 'var(--ink-muted)' }}>
                     {entry.creator_name}
                   </p>
-                  {entry.editorial_explanation && (
-                    <p className="display text-[15px] mt-2 leading-relaxed" style={{ color: 'var(--ink-faint)' }}>
-                      {entry.editorial_explanation}
+                  {(entry.preview_text || entry.editorial_explanation) && (
+                    <p className="text-[15px] mt-2 leading-relaxed" style={{ color: 'var(--ink-faint)' }}>
+                      {(entry.preview_text || entry.editorial_explanation || "").slice(0, 200)}
                     </p>
                   )}
                   {safeExternalUrl(entry.url) && (

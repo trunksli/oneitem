@@ -13,10 +13,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from . import models, queries
+from . import auth, models, queries
 from .database import engine, get_db
+from .migrations import ensure_schema
 
 models.Base.metadata.create_all(bind=engine)
+# create_all never alters existing tables, and there is live data to bring forward.
+ensure_schema(engine)
 
 app = FastAPI(title="ONE - Daily Diamond API")
 
@@ -46,13 +49,36 @@ class FeedbackCreate(BaseModel):
 
 class AdminAction(BaseModel):
     candidate_id: str
+    publish_time: Optional[str] = None
+
+
+class AdminLogin(BaseModel):
+    username: str
+    password: str
+
+
+class UnscheduleAction(BaseModel):
+    hourly_id: str
 
 
 def require_admin(x_admin_token: Optional[str] = Header(None)):
-    """Admin routes are disabled entirely unless ADMIN_TOKEN is configured."""
-    token = os.getenv("ADMIN_TOKEN")
-    if not token or x_admin_token != token:
-        raise HTTPException(status_code=403, detail="Admin token required")
+    """Accepts a signed session token from the login form, or the raw ADMIN_TOKEN
+    for scripts. Admin routes are disabled entirely when nothing is configured."""
+    if not auth.verify_token(x_admin_token):
+        raise HTTPException(status_code=403, detail="Sign in required")
+
+
+@app.post("/admin/login")
+def admin_login(credentials: AdminLogin):
+    """Exchange username and password for a short-lived session token."""
+    if not auth.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Admin access is not configured (set ADMIN_USERNAME, ADMIN_PASSWORD and ADMIN_TOKEN)")
+    if not auth.check_credentials(credentials.username, credentials.password):
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
+    token, expires_at = auth.issue_token()
+    return {"token": token, "expires_at": expires_at}
 
 
 @app.on_event("startup")
@@ -139,12 +165,30 @@ def admin_sources(db: Session = Depends(get_db)):
     return queries.get_source_stats(db)
 
 
+@app.get("/admin/schedule", dependencies=[Depends(require_admin)])
+def admin_get_schedule(hours: int = 24, db: Session = Depends(get_db)):
+    """The upcoming curation runway."""
+    return queries.get_schedule(db, hours)
+
+
 @app.post("/admin/schedule", status_code=201, dependencies=[Depends(require_admin)])
 def admin_schedule(action: AdminAction, db: Session = Depends(get_db)):
     try:
-        return queries.feature_candidate(db, action.candidate_id)
+        return queries.feature_candidate(db, action.candidate_id, action.publish_time)
     except queries.NotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/admin/unschedule", dependencies=[Depends(require_admin)])
+def admin_unschedule(action: UnscheduleAction, db: Session = Depends(get_db)):
+    try:
+        return queries.unschedule(db, action.hourly_id)
+    except queries.NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/admin/reject", dependencies=[Depends(require_admin)])

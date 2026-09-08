@@ -3,6 +3,8 @@ import json
 import requests
 from sqlalchemy.orm import Session
 from . import models
+from .previews import choose_preview, is_usable
+from .themes import THEMES, TONES, normalize_theme, normalize_tone
 
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
@@ -100,6 +102,8 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
         content_kind = "article"
         
     # Prepare the prompt
+    theme_list = ", ".join(THEMES)
+    tone_list = ", ".join(TONES)
     prompt = f"""
     You are an expert content curator for a service called ONE. 
     Our goal is to find exactly one exceptional piece of content per hour. We are looking for "diamonds in the rough" - highly interesting, trustworthy, non-clickbait content by obsessive experts.
@@ -118,7 +122,11 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     - originality_score: Integer 0-100. Does this provide something meaningfully different from common content?
     - expertise_score: Integer 0-100. Does the creator demonstrate genuine knowledge or unusual experience?
     - clickbait_penalty: Integer 0-100. Higher means MORE clickbait/sensationalism.
-    - theme: String. Pick the single most appropriate theme from this exact list: Bioscience, AI, Weird Food, Architecture, Gaming, Oddball, Random, History, Engineering, Culture.
+    - theme: String. Pick the single most appropriate theme from this exact list: {theme_list}.
+    - tone: String. How this piece feels to consume. Pick one of: {tone_list}.
+    - gist: String. Two plain sentences saying what this content actually IS and what a
+      reader will learn or see, written so someone can decide whether to open it without
+      clicking. Describe the content, do not sell it, and do not repeat the title.
     - explanation: String. A concise 2-3 sentence editorial explanation of why this was selected and why it's exceptional (do not use generic language like "This fascinating video explores...").
     
     Return ONLY valid JSON.
@@ -157,11 +165,19 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     candidate.clickbait_penalty = clamp_score("clickbait_penalty") or 0
     candidate.ai_explanation = scores.get("explanation", "")
     
-    theme_str = scores.get("theme", "Random")
-    try:
-        candidate.theme = models.Theme(theme_str)
-    except ValueError:
-        candidate.theme = models.Theme.RANDOM
+    candidate.theme = normalize_theme(scores.get("theme"))
+    candidate.tone = normalize_tone(scores.get("tone"))
+
+    # Every item must be previewable without clicking through, and the preview has
+    # to be the actual gist. The model's summary is preferred over the source's own
+    # opening because descriptions start with sponsor reads and scraped pages start
+    # with nav chrome -- both useless for deciding whether to open something.
+    gist = (scores.get("gist") or "").strip()
+    if gist and is_usable(gist):
+        candidate.preview_text = gist
+    else:
+        candidate.preview_text = choose_preview(
+            candidate.preview_text, gist, candidate.description)
     
     from datetime import datetime
     

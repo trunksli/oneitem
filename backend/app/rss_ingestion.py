@@ -18,6 +18,7 @@ from html.parser import HTMLParser
 from sqlalchemy.orm import Session
 
 from . import models
+from .previews import choose_preview
 
 # High-quality "obsessive expert" feeds. Edit freely.
 SEED_FEEDS = [
@@ -30,6 +31,52 @@ MAX_ITEMS_PER_FEED = 10
 ARTICLE_TEXT_LIMIT = 20000
 
 ATOM_NS = "{http://www.w3.org/2005/Atom}"
+
+
+class _MetaExtractor(HTMLParser):
+    """Pulls the social preview image out of an article page.
+
+    Publishers already choose a representative image for og:image -- using it
+    means articles get a real thumbnail rather than a blank rectangle, with no
+    image generation and nothing invented.
+    """
+    IMAGE_PROPS = ("og:image", "og:image:url", "twitter:image", "twitter:image:src")
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.image = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "meta" or self.image:
+            return
+        a = dict(attrs)
+        key = (a.get("property") or a.get("name") or "").strip().lower()
+        content = (a.get("content") or "").strip()
+        if key in self.IMAGE_PROPS and content.lower().startswith(("http://", "https://")):
+            self.image = content
+
+
+def first_sentences(text, count=2, limit=320):
+    """The opening of an article, for the preview card.
+
+    The author's own first sentences, not a paraphrase -- short enough to be fair
+    use as a snippet and more honest than a generated summary.
+    """
+    if not text:
+        return ""
+    cleaned = re.sub(r'\s+', ' ', text).strip()
+    parts = re.split(r'(?<=[.!?])\s+', cleaned)
+    out = ""
+    for part in parts[:count]:
+        candidate = (out + " " + part).strip() if out else part
+        if len(candidate) > limit:
+            break
+        out = candidate
+    if not out:
+        out = cleaned[:limit]
+    if len(out) < len(cleaned):
+        out = out.rstrip(" .") + "..."
+    return out
 
 
 class _TextExtractor(HTMLParser):
@@ -76,17 +123,27 @@ def strip_html(html_text: str) -> str:
     return re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', html_text or '')).strip()
 
 
-def fetch_article_text(url: str) -> str:
-    """Fetches an article page and extracts readable text. Empty string on failure."""
+def fetch_article(url: str):
+    """Fetches an article once and returns (readable_text, preview_image_url)."""
     try:
         res = requests.get(url, timeout=20, headers={"User-Agent": "ONE-curator/0.1"})
         res.raise_for_status()
+        html = res.text
+
+        meta = _MetaExtractor()
+        meta.feed(html)
+
         extractor = _TextExtractor()
-        extractor.feed(res.text)
-        return extractor.text()[:ARTICLE_TEXT_LIMIT]
+        extractor.feed(html)
+        return extractor.text()[:ARTICLE_TEXT_LIMIT], meta.image
     except Exception as e:
-        print(f"Could not fetch article text for {url}: {e}")
-        return ""
+        print(f"Could not fetch article for {url}: {e}")
+        return "", None
+
+
+def fetch_article_text(url: str) -> str:
+    """Backwards-compatible wrapper returning only the text."""
+    return fetch_article(url)[0]
 
 
 def _parse_date(text):
@@ -185,8 +242,13 @@ def ingest_feeds(db: Session, feed_urls=None):
                 existing = db.query(models.ContentCandidate).filter_by(url=entry['url']).first()
                 if existing:
                     continue
-                # Fetch full text only for new items (one HTTP request each)
-                article_text = fetch_article_text(entry['url'])
+                # One request per new item yields both the text and the image
+                article_text, image_url = fetch_article(entry['url'])
+                # Prefer the article's own opening; fall back to the feed summary
+                # Quality-checked: sponsor reads and nav chrome are rejected here,
+                # and the scorer will supply a written gist instead.
+                preview = choose_preview(
+                    first_sentences(article_text), first_sentences(entry['description']))
                 candidate = models.ContentCandidate(
                     source_type=models.SourceType.RSS,
                     source_id=entry['url'],
@@ -196,7 +258,8 @@ def ingest_feeds(db: Session, feed_urls=None):
                     creator_name=feed_title or feed_url,
                     creator_url=feed_url,
                     upload_date=entry['published'],
-                    thumbnail_url="",
+                    thumbnail_url=image_url or "",
+                    preview_text=preview,
                     transcript=article_text,
                 )
                 db.add(candidate)

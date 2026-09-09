@@ -119,6 +119,13 @@ and every endpoint behind it returns 403 without a valid session, but it is not 
 secret page. Sessions expire after `ADMIN_SESSION_HOURS` and live in
 sessionStorage, so they die with the browser tab.
 
+**If the API returns 500 on every route but `/health` is fine,** the database
+schema is behind the code. Check `curl https://<api>/status` -- it reports
+`schema.missing_columns` and keeps answering even when the database is the broken
+part. Redeploying applies migrations at startup; to apply them without a deploy,
+run `python migrate.py` as a Render one-off job (it exits non-zero if anything is
+still missing).
+
 **If the Python build fails on a wheel** (usually `psycopg2-binary` on a
 brand-new interpreter), pin the runtime: add `PYTHON_VERSION` = `3.12.8` to the
 API service's environment variables and redeploy. `requirements.txt` uses

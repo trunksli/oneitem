@@ -218,34 +218,54 @@ def get_status(db):
     """
     now = datetime.datetime.utcnow()
     current_hour = now.replace(minute=0, second=0, microsecond=0)
+    pipeline_every = int(os.getenv("PIPELINE_EVERY_HOURS", "6"))
+
+    # Every database section is individually guarded. The whole point of this
+    # endpoint is to explain a broken deployment, so it has to keep answering when
+    # the database is the broken part -- an earlier version 500'd alongside
+    # everything else and was useless exactly when it was needed.
+    errors = []
+
+    def attempt(label, fn, default=None):
+        try:
+            return fn()
+        except Exception as e:
+            db.rollback()
+            errors.append("%s: %s" % (label, e))
+            return default
 
     counts = {}
-    for status, total in db.query(
+    for status, total in attempt("candidates_by_status", lambda: db.query(
             models.ContentCandidate.status, func.count()
-    ).group_by(models.ContentCandidate.status).all():
+    ).group_by(models.ContentCandidate.status).all(), []):
         counts[_plain(status) or "UNKNOWN"] = total
 
     by_source = {}
-    for source, total in db.query(
+    for source, total in attempt("candidates_by_source", lambda: db.query(
             models.ContentCandidate.source_type, func.count()
-    ).group_by(models.ContentCandidate.source_type).all():
+    ).group_by(models.ContentCandidate.source_type).all(), []):
         by_source[_plain(source) or "UNKNOWN"] = total
 
-    latest_discovered = db.query(func.max(models.ContentCandidate.discovered_date)).scalar()
-    pipeline_every = int(os.getenv("PIPELINE_EVERY_HOURS", "6"))
+    latest_discovered = attempt("last_ingestion", lambda: db.query(
+        func.max(models.ContentCandidate.discovered_date)).scalar())
     pipeline_due = (
         True if latest_discovered is None
         else (now - latest_discovered).total_seconds() >= pipeline_every * 3600
     )
 
-    this_hour = db.query(models.HourlyOne).filter(
-        models.HourlyOne.publish_time == current_hour).first()
-    latest = db.query(models.HourlyOne).order_by(
-        models.HourlyOne.publish_time.desc()).first()
+    this_hour = attempt("current_hour", lambda: db.query(models.HourlyOne).filter(
+        models.HourlyOne.publish_time == current_hour).first())
+    latest = attempt("latest_hour", lambda: db.query(models.HourlyOne).order_by(
+        models.HourlyOne.publish_time.desc()).first())
     latest_candidate = None
     if latest is not None:
-        latest_candidate = db.query(models.ContentCandidate).filter(
-            models.ContentCandidate.id == latest.candidate_id).first()
+        latest_candidate = attempt("latest_candidate", lambda: db.query(
+            models.ContentCandidate).filter(
+            models.ContentCandidate.id == latest.candidate_id).first())
+
+    # Missing columns are the most likely cause of blanket 500s, so name them here.
+    from .migrations import verify_schema
+    missing_columns = attempt("schema_check", lambda: verify_schema(db.get_bind()), ["<unknown>"])
 
     database_url = os.getenv("DATABASE_URL") or ""
     if database_url.startswith("postgres"):
@@ -256,9 +276,17 @@ def get_status(db):
         backend = "sqlite (ephemeral on most hosts)"
 
     return {
-        "status": "ok",
+        "status": "degraded" if (errors or missing_columns) else "ok",
         "utc_now": _plain(now),
         "current_hour": _plain(current_hour),
+
+        "schema": {
+            "ok": not missing_columns,
+            "missing_columns": missing_columns,
+            "hint": ("Redeploy the API, or run `python migrate.py`, to apply pending "
+                     "schema changes." if missing_columns else None),
+        },
+        "errors": errors,
 
         "config": {
             "database": backend,
@@ -281,17 +309,21 @@ def get_status(db):
         },
 
         "schedule": {
-            "hours_published": db.query(func.count(models.HourlyOne.id)).scalar() or 0,
+            "hours_published": attempt("hours_published", lambda: db.query(
+                func.count(models.HourlyOne.id)).scalar()) or 0,
             "current_hour_filled": this_hour is not None,
             "latest_publish_time": _plain(latest.publish_time) if latest else None,
             "latest_title": latest_candidate.title if latest_candidate else None,
-            "outcomes_pending_check": db.query(func.count(models.HourlyOne.id)).filter(
-                models.HourlyOne.outcome_checked_at.is_(None)).scalar() or 0,
+            "outcomes_pending_check": attempt("outcomes_pending", lambda: db.query(
+                func.count(models.HourlyOne.id)).filter(
+                models.HourlyOne.outcome_checked_at.is_(None)).scalar()) or 0,
         },
 
         "engagement": {
-            "comments_total": db.query(func.count(models.Comment.id)).scalar() or 0,
-            "feedback_total": db.query(func.count(models.Feedback.id)).scalar() or 0,
+            "comments_total": attempt("comments_total", lambda: db.query(
+                func.count(models.Comment.id)).scalar()) or 0,
+            "feedback_total": attempt("feedback_total", lambda: db.query(
+                func.count(models.Feedback.id)).scalar()) or 0,
         },
     }
 

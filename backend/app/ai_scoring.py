@@ -95,11 +95,18 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     if candidate.source_type == models.SourceType.YOUTUBE:
         # Used for this prompt only; the transcript is never written to the database.
         transcript = get_video_transcript(candidate.source_id)
-        content_kind = "video"
+        content_kind, text_label = "video", "Transcript"
+    elif candidate.source_type == models.SourceType.VIMEO:
+        # Films have no transcript; the maker's own description is what there is
+        transcript = candidate.transcript or ""
+        content_kind, text_label = "short film", "Film description"
+    elif candidate.source_type == models.SourceType.PODCAST:
+        transcript = candidate.transcript or ""
+        content_kind, text_label = "podcast episode", "Show notes"
     else:
         # RSS/web candidates store their extracted article text in the same slot
         transcript = candidate.transcript or ""
-        content_kind = "article"
+        content_kind, text_label = "article", "Article text"
         
     # Prepare the prompt
     theme_list = ", ".join(THEMES)
@@ -113,7 +120,7 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     Title: {candidate.title}
     Creator/Publication: {candidate.creator_name}
     Description: {(candidate.description or "")[:500]}...
-    {"Transcript" if content_kind == "video" else "Article text"}: {(transcript or "")[:SCORING_TEXT_LIMIT]}...
+    {text_label}: {(transcript or "")[:SCORING_TEXT_LIMIT]}...
     
     Please provide a JSON response with the following keys:
     - quality_score: Integer 0-100. How well-made, substantive, and worthwhile is this?
@@ -205,9 +212,10 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     # Quick-and-dirty Viral Outlier Score
     # We look for a high ratio of views to subscribers, especially on recent videos.
     # A standard video gets ~10% of subscriber count in views.
-    # Channels that hide their subscriber count come through as 0 - without real
-    # subscriber data the ratio is meaningless, so no bonus in that case.
-    ratio = (views / subs) if subs > 0 else 0
+    # Channels that hide their subscriber count come through as 0, and some report
+    # nonsense (one real channel reports 2) - without real subscriber data the
+    # ratio is meaningless, so no bonus in that case.
+    ratio = (views / subs) if subs >= 1000 else 0
     
     outlier_bonus = 0
     if candidate.upload_date:

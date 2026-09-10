@@ -11,7 +11,7 @@ def get_youtube_api_key():
 
 def get_channel_info(channel_id: str):
     url = f"https://www.googleapis.com/youtube/v3/channels?part=contentDetails,statistics&id={channel_id}&key={get_youtube_api_key()}"
-    res = requests.get(url)
+    res = requests.get(url, timeout=20)
     res.raise_for_status()
     data = res.json()
     if not data.get('items'):
@@ -20,14 +20,14 @@ def get_channel_info(channel_id: str):
 
 def get_playlist_items(playlist_id: str, max_results: int = 10):
     url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId={playlist_id}&maxResults={max_results}&key={get_youtube_api_key()}"
-    res = requests.get(url)
+    res = requests.get(url, timeout=20)
     res.raise_for_status()
     return res.json().get('items', [])
 
 def get_videos_details(video_ids: list):
     ids_str = ",".join(video_ids)
     url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id={ids_str}&key={get_youtube_api_key()}"
-    res = requests.get(url)
+    res = requests.get(url, timeout=20)
     res.raise_for_status()
     return res.json().get('items', [])
 
@@ -87,15 +87,25 @@ def fetch_latest_videos_from_channel(channel_id: str, max_results: int = 10):
         
     return candidates
 
-def ingest_seed_channels(db: Session, channel_ids: list):
+def ingest_seed_channels(db: Session, channel_ids, per_channel=None):
     """
     Ingests latest videos from a list of 'Obsessive Expert' seed channels.
+
+    At most `per_channel` new videos each, skipping Shorts and trailers, so one
+    prolific channel cannot flood the pool. Costs 3 quota units per channel.
     """
+    from .sources import MIN_VIDEO_SECONDS, NEW_VIDEOS_PER_CHANNEL
+    per_channel = per_channel or NEW_VIDEOS_PER_CHANNEL
     for channel_id in channel_ids:
         print(f"Fetching for channel: {channel_id}")
         try:
-            videos = fetch_latest_videos_from_channel(channel_id)
+            videos = fetch_latest_videos_from_channel(channel_id, max_results=8)
+            added = 0
             for v_data in videos:
+                if added >= per_channel:
+                    break
+                if (v_data.get('duration_seconds') or 0) < MIN_VIDEO_SECONDS:
+                    continue
                 # Check if already exists
                 existing = db.query(models.ContentCandidate).filter_by(url=v_data['url']).first()
                 if not existing:
@@ -104,6 +114,7 @@ def ingest_seed_channels(db: Session, channel_ids: list):
                         **v_data
                     )
                     db.add(candidate)
+                    added += 1
             db.commit()
         except Exception as e:
             print(f"Error fetching channel {channel_id}: {e}")

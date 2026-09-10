@@ -1,10 +1,10 @@
 """
-Phase B connector: RSS/Atom feeds (blogs, magazines, essays).
+Feed connectors: articles (RSS/Atom), Vimeo films, and podcasts.
 
 Parses feeds with the stdlib (xml.etree) to avoid new dependencies on the
-pinned Python 3.6 environment, and extracts readable article text for the AI
-scoring prompt (stored in ContentCandidate.transcript, same slot YouTube
-transcripts use).
+pinned Python 3.6 environment. Articles get their readable text extracted for
+the AI scoring prompt (stored in ContentCandidate.transcript, the same slot
+YouTube transcripts use, and only until scored).
 
 TikTok / Instagram Reels are intentionally NOT scraped here: neither offers a
 public content API and scraping violates their ToS. The plan is to accept
@@ -18,22 +18,22 @@ from urllib import robotparser
 from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from . import models
+from . import models, sources
 from .previews import SCORING_TEXT_LIMIT, choose_preview
 
-# High-quality "obsessive expert" feeds. Edit freely.
-SEED_FEEDS = [
-    "https://www.quantamagazine.org/feed/",
-    "https://aeon.co/feed.rss",
-    "https://nautil.us/feed/",
-]
+# Kept for callers that ingest without naming feeds.
+SEED_FEEDS = sources.ARTICLE_FEEDS
 
 MAX_ITEMS_PER_FEED = 10
 ARTICLE_TEXT_LIMIT = 20000
 
 ATOM_NS = "{http://www.w3.org/2005/Atom}"
+MEDIA_NS = "{http://search.yahoo.com/mrss/}"
+ITUNES_NS = "{http://www.itunes.com/dtds/podcast-1.0.dtd}"
+CONTENT_NS = "{http://purl.org/rss/1.0/modules/content/}"
 
 # A well-behaved crawler says who it is and how to reach its operator.
 CRAWLER_TOKEN = "ONE-curator"
@@ -214,6 +214,21 @@ def _parse_date(text):
     return None
 
 
+def parse_duration(text):
+    """Seconds from "2281", "38:01" or "00:38:01"; None if unreadable."""
+    if not text:
+        return None
+    parts = text.strip().split(":")
+    try:
+        numbers = [int(float(p)) for p in parts]
+    except ValueError:
+        return None
+    seconds = 0
+    for n in numbers:
+        seconds = seconds * 60 + n
+    return seconds or None
+
+
 def _first_text(element, *tags):
     for tag in tags:
         found = element.find(tag)
@@ -222,8 +237,45 @@ def _first_text(element, *tags):
     return None
 
 
+def _safe(url):
+    return url.strip() if is_safe_url(url) else None
+
+
+def _item_image(item):
+    """The image a feed item carries itself, before any page is fetched."""
+    for el in item.iter(MEDIA_NS + 'thumbnail'):
+        if _safe(el.get('url')):
+            return el.get('url').strip()
+    for el in item.iter(MEDIA_NS + 'content'):
+        if (el.get('medium') == 'image' or (el.get('type') or '').startswith('image/')) and _safe(el.get('url')):
+            return el.get('url').strip()
+    enclosure = item.find('enclosure')
+    if enclosure is not None and (enclosure.get('type') or '').startswith('image/') and _safe(enclosure.get('url')):
+        return enclosure.get('url').strip()
+    itunes = item.find(ITUNES_NS + 'image')
+    if itunes is not None and _safe(itunes.get('href')):
+        return itunes.get('href').strip()
+    return None
+
+
+def _item_duration(item):
+    seconds = parse_duration(_first_text(item, ITUNES_NS + 'duration'))
+    if seconds:
+        return seconds
+    for el in item.iter(MEDIA_NS + 'content'):
+        seconds = parse_duration(el.get('duration'))
+        if seconds:
+            return seconds
+    return None
+
+
 def parse_feed(xml_text: str):
-    """Returns (feed_title, [entry dicts]) for RSS 2.0 or Atom."""
+    """Returns (feed_title, [entry dicts]) for RSS 2.0 or Atom.
+
+    Each entry has title, url, description, published, plus what media feeds add:
+    image (the item's own), feed_image (the show's cover art), audio_url (a
+    podcast enclosure), duration (seconds) and guid.
+    """
     root = ET.fromstring(xml_text)
     entries = []
 
@@ -232,15 +284,36 @@ def parse_feed(xml_text: str):
         if channel is None:
             return None, []
         feed_title = _first_text(channel, 'title')
+        feed_link = _first_text(channel, 'link')
+        cover = channel.find(ITUNES_NS + 'image')
+        feed_image = _safe(cover.get('href')) if cover is not None else None
+        feed_image = feed_image or _safe(_first_text(channel.find('image'), 'url')
+                                         if channel.find('image') is not None else None)
+
         for item in channel.findall('item')[:MAX_ITEMS_PER_FEED]:
+            enclosure = item.find('enclosure')
+            audio = None
+            if enclosure is not None and (enclosure.get('type') or '').startswith('audio/'):
+                audio = _safe(enclosure.get('url'))
             link = _first_text(item, 'link')
+            # Many podcasts link every episode to the show's home page; the audio
+            # is the only thing that identifies the episode then.
+            if audio and (not link or link == feed_link):
+                link = audio
             if not link:
                 continue
+            description = (_first_text(item, 'description', CONTENT_NS + 'encoded',
+                                       ITUNES_NS + 'summary') or "")
             entries.append({
                 "title": _first_text(item, 'title') or "(untitled)",
                 "url": link,
-                "description": strip_html(_first_text(item, 'description') or ""),
+                "description": strip_html(description),
                 "published": _parse_date(_first_text(item, 'pubDate')),
+                "image": _item_image(item),
+                "feed_image": feed_image,
+                "audio_url": audio,
+                "duration": _item_duration(item),
+                "guid": _first_text(item, 'guid'),
             })
         return feed_title, entries
 
@@ -259,59 +332,161 @@ def parse_feed(xml_text: str):
                 "url": link,
                 "description": strip_html(_first_text(entry, ATOM_NS + 'summary', ATOM_NS + 'content') or ""),
                 "published": _parse_date(_first_text(entry, ATOM_NS + 'published', ATOM_NS + 'updated')),
+                "image": _item_image(entry),
+                "feed_image": None,
+                "audio_url": None,
+                "duration": None,
+                "guid": _first_text(entry, ATOM_NS + 'id'),
             })
         return feed_title, entries
 
     return None, []
 
 
-def ingest_feeds(db: Session, feed_urls=None):
-    """Ingests articles from RSS/Atom feeds as ContentCandidates."""
+# ------------------------------------------------------------------ per medium
+
+def _article_candidate(entry, feed_title, feed_url):
+    # One request per new item yields both the text and the image
+    article_text, image_url = fetch_article(entry['url'])
+    # Prefer the article's own opening; fall back to the feed summary.
+    # Quality-checked: sponsor reads and nav chrome are rejected here,
+    # and the scorer will supply a written gist instead.
+    preview = choose_preview(
+        first_sentences(article_text), first_sentences(entry['description']))
+    return models.ContentCandidate(
+        source_type=models.SourceType.RSS,
+        source_id=entry['url'],
+        url=entry['url'],
+        title=entry['title'],
+        description=entry['description'],
+        creator_name=feed_title or feed_url,
+        creator_url=feed_url,
+        upload_date=entry['published'],
+        thumbnail_url=image_url or entry.get('image') or "",
+        preview_text=preview,
+        # Only what the scorer reads is kept, and only until it is scored.
+        transcript=(article_text or "")[:SCORING_TEXT_LIMIT] or None,
+    )
+
+
+def _podcast_candidate(entry, feed_title, feed_url):
+    """An episode. The audio is never downloaded -- the listener's player streams it."""
+    if not entry.get('audio_url'):
+        return None
+    notes = entry['description'] or ""
+    return models.ContentCandidate(
+        source_type=models.SourceType.PODCAST,
+        source_id=entry['audio_url'],
+        url=entry['url'],
+        title=entry['title'],
+        description=notes[:SCORING_TEXT_LIMIT],
+        creator_name=feed_title or feed_url,
+        creator_url=feed_url,
+        upload_date=entry['published'],
+        # The episode's own art where it has one, else the show's cover
+        thumbnail_url=entry.get('image') or entry.get('feed_image') or "",
+        duration_seconds=entry.get('duration'),
+        preview_text=choose_preview(first_sentences(notes)),
+        # Show notes are what the scorer reads for a podcast
+        transcript=notes[:SCORING_TEXT_LIMIT] or None,
+    )
+
+
+def vimeo_id(entry):
+    """The numeric film id, from the guid ("tag:vimeo,...:clip123") or the link."""
+    match = re.search(r'clip(\d+)', entry.get('guid') or '') or \
+        re.search(r'vimeo\.com/(?:.*/)?(\d+)/?$', entry.get('url') or '')
+    return match.group(1) if match else None
+
+
+def vimeo_oembed(url):
+    """Public film details from Vimeo's oEmbed endpoint; {} if unavailable."""
+    try:
+        res = requests.get("https://vimeo.com/api/oembed.json", params={"url": url},
+                           timeout=15, headers={"User-Agent": USER_AGENT})
+        return res.json() if res.ok else {}
+    except Exception as e:
+        print("Vimeo oEmbed failed for %s: %s" % (url, e))
+        return {}
+
+
+def _vimeo_candidate(entry, feed_title, feed_url):
+    video_id = vimeo_id(entry)
+    if not video_id:
+        return None
+    url = "https://vimeo.com/%s" % video_id
+    info = vimeo_oembed(url)
+    # oEmbed returns a small thumbnail; the same image is served at any size
+    thumb = _safe(info.get('thumbnail_url')) or ""
+    thumb = re.sub(r'-d_\d+x\d+', '-d_1280x720', thumb)
+    notes = strip_html(info.get('description') or "") or entry['description'] or ""
+    return models.ContentCandidate(
+        source_type=models.SourceType.VIMEO,
+        source_id=video_id,
+        url=url,
+        title=info.get('title') or entry['title'],
+        description=notes[:SCORING_TEXT_LIMIT],
+        creator_name=info.get('author_name') or feed_title or "Vimeo",
+        creator_url=_safe(info.get('author_url')) or url,
+        upload_date=entry['published'],
+        thumbnail_url=thumb,
+        duration_seconds=info.get('duration') or entry.get('duration'),
+        preview_text=choose_preview(first_sentences(notes)),
+        transcript=notes[:SCORING_TEXT_LIMIT] or None,
+    )
+
+
+BUILDERS = {
+    "article": _article_candidate,
+    "podcast": _podcast_candidate,
+    "vimeo": _vimeo_candidate,
+}
+
+
+def ingest_feeds(db: Session, feed_urls=None, kind="article", per_feed=None):
+    """Ingests new items from feeds of one kind ("article", "podcast" or "vimeo")."""
     feed_urls = feed_urls if feed_urls is not None else SEED_FEEDS
+    build = BUILDERS[kind]
+    per_feed = per_feed or sources.NEW_ITEMS_PER_FEED
     added = 0
     for feed_url in feed_urls:
-        print(f"Fetching feed: {feed_url}")
+        print(f"Fetching {kind} feed: {feed_url}")
         try:
             res = requests.get(feed_url, timeout=20, headers={"User-Agent": USER_AGENT})
             res.raise_for_status()
-            feed_title, entries = parse_feed(res.text)
+            feed_title, entries = parse_feed(res.content)
             if not entries:
                 print(f"No entries parsed from {feed_url}")
                 continue
 
+            new_here = 0
             for entry in entries:
+                if new_here >= per_feed:
+                    break
                 if not is_safe_url(entry['url']):
                     print("Skipping entry with unsafe link: %r" % (entry['url'],))
                     continue
-                existing = db.query(models.ContentCandidate).filter_by(url=entry['url']).first()
+                keys = [entry['url']] + ([entry['audio_url']] if entry.get('audio_url') else [])
+                if kind == "vimeo" and vimeo_id(entry):
+                    keys.append("https://vimeo.com/%s" % vimeo_id(entry))
+                existing = db.query(models.ContentCandidate).filter(or_(
+                    models.ContentCandidate.url.in_(keys),
+                    models.ContentCandidate.source_id.in_(keys))).first()
                 if existing:
                     continue
-                # One request per new item yields both the text and the image
-                article_text, image_url = fetch_article(entry['url'])
-                # Prefer the article's own opening; fall back to the feed summary
-                # Quality-checked: sponsor reads and nav chrome are rejected here,
-                # and the scorer will supply a written gist instead.
-                preview = choose_preview(
-                    first_sentences(article_text), first_sentences(entry['description']))
-                candidate = models.ContentCandidate(
-                    source_type=models.SourceType.RSS,
-                    source_id=entry['url'],
-                    url=entry['url'],
-                    title=entry['title'],
-                    description=entry['description'],
-                    creator_name=feed_title or feed_url,
-                    creator_url=feed_url,
-                    upload_date=entry['published'],
-                    thumbnail_url=image_url or "",
-                    preview_text=preview,
-                    # Only what the scorer reads is kept, and only until it is scored.
-                    transcript=(article_text or "")[:SCORING_TEXT_LIMIT] or None,
-                )
+                candidate = build(entry, feed_title, feed_url)
+                if candidate is None:
+                    continue
+                if kind == "vimeo" and (candidate.duration_seconds or 0) and \
+                        candidate.duration_seconds < sources.MIN_VIDEO_SECONDS:
+                    continue
                 db.add(candidate)
+                db.flush()  # so a repeat of this item later in the feed is seen
+                new_here += 1
                 added += 1
             db.commit()
         except Exception as e:
             print(f"Error ingesting feed {feed_url}: {e}")
             db.rollback()
-    print(f"RSS ingestion complete: {added} new candidates.")
+    print(f"{kind.capitalize()} ingestion complete: {added} new candidates.")
     return added

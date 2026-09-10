@@ -22,7 +22,8 @@
  *     earlier day's salt is deleted.
  *   - ONE sets no cookies and loads no analytics or advertising scripts. Fonts are
  *     self-hosted by next/font, so no request goes to Google Fonts. YouTube
- *     players use youtube-nocookie.com.
+ *     players use youtube-nocookie.com; Vimeo players use dnt=1; podcast audio
+ *     is only requested after Listen is pressed (frontend/src/app/page.tsx).
  *   - Third-party text: at most 3,000 characters are kept, only until the item is
  *     scored, then cleared (backend/app/previews.py SCORING_TEXT_LIMIT).
  */
@@ -292,6 +293,14 @@ export const PRIVACY: LegalSection[] = [
         `and Google's privacy policy apply: ${GOOGLE_PRIVACY_URL}.`,
       "Some videos are provided through YouTube API Services, which we use only to read " +
         "public information about videos. We never access your YouTube or Google account.",
+      "Films from Vimeo play in Vimeo's player with its do-not-track setting turned on, " +
+        "which Vimeo describes as stopping the player from tracking session data, " +
+        "including cookies. Once you press play, Vimeo's terms and privacy policy apply: " +
+        "https://vimeo.com/privacy.",
+      "Podcast episodes stream directly from the publisher's own audio host, and nothing " +
+        "is requested from it until you press Listen. Podcast hosts commonly measure " +
+        "downloads, which can include your network address and device type; that " +
+        "information goes to them, not to us.",
       "When you follow a link to the original work, you leave ONE and that site's own " +
         "privacy practices apply.",
     ],

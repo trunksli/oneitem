@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { MessageSquare, X, Send, Play, BookOpen, Link2, Check } from 'lucide-react';
+import { MessageSquare, X, Send, Play, BookOpen, Headphones, Link2, Check } from 'lucide-react';
 import { API_BASE } from '@/lib/api';
 import ApiWarning from '@/components/api-warning';
 import Thumbnail from '@/components/thumbnail';
@@ -26,6 +26,10 @@ interface Candidate {
   preview_text?: string | null;
   tone?: string | null;
 }
+
+const SOURCE_LABELS: Record<string, string> = {
+  YOUTUBE: "YouTube", VIMEO: "Vimeo", PODCAST: "Podcast", RSS: "Article", WEB: "Web",
+};
 
 interface HourlyResponse {
   hourly?: { id: string; theme: string; publish_time?: string };
@@ -68,8 +72,8 @@ export default function Home() {
   const chatPanelRef = useRef<HTMLDivElement>(null);
   const chatToggleRef = useRef<HTMLButtonElement>(null);
 
-  const fetchHourly = useCallback((pickId?: string | null) => {
-    fetch(pickId ? `${API_BASE}/pick/${encodeURIComponent(pickId)}` : `${API_BASE}/hourly`)
+  const fetchHourly = useCallback((pickId?: string | null, signal?: AbortSignal) => {
+    fetch(pickId ? `${API_BASE}/pick/${encodeURIComponent(pickId)}` : `${API_BASE}/hourly`, { signal })
       .then(res => res.json())
       .then((data: HourlyResponse) => {
         setLoadFailed(false);
@@ -83,6 +87,7 @@ export default function Home() {
         setLoading(false);
       })
       .catch(err => {
+        if (err?.name === "AbortError") return;  // superseded by a newer request
         console.error(err);
         setLoadFailed(true);
         setLoading(false);
@@ -100,13 +105,19 @@ export default function Home() {
   const refreshLive = useCallback(() => fetchHourly(), [fetchHourly]);
 
   useEffect(() => {
-    fetchHourly(pinnedId);
+    // The pick id is read from the URL after the first render, so this effect runs
+    // once for "now" and again for the pinned pick. Without cancelling the first
+    // request, whichever answer arrived last won -- a shared link could open on
+    // the current pick instead of the one that was shared.
+    const controller = new AbortController();
+    fetchHourly(pinnedId, controller.signal);
     fetchComments();
 
     const commentInterval = setInterval(fetchComments, 10000);
     // Only the live view rolls over; a permalink must keep showing its own hour.
     const hourlyInterval = pinnedId ? null : setInterval(() => fetchHourly(), 60000);
     return () => {
+      controller.abort();
       clearInterval(commentInterval);
       if (hourlyInterval) clearInterval(hourlyInterval);
     };
@@ -195,12 +206,18 @@ export default function Home() {
 
   // Only offer playback when there is something to play. The previous build showed
   // a Play badge even on the empty state, so clicking it did nothing at all.
-  const canEmbed = Boolean(candidate?.source_type === "YOUTUBE" && candidate?.source_id);
+  // Ids are checked before they reach a player URL: they come from third-party feeds.
+  const sourceId = candidate?.source_id || "";
+  const youtubeId = candidate?.source_type === "YOUTUBE" && /^[\w-]{6,20}$/.test(sourceId) ? sourceId : null;
+  const vimeoId = candidate?.source_type === "VIMEO" && /^\d{1,15}$/.test(sourceId) ? sourceId : null;
+  const audioUrl = candidate?.source_type === "PODCAST" ? safeExternalUrl(sourceId) : undefined;
+  const canEmbed = Boolean(youtubeId || vimeoId || audioUrl);
   const playable = Boolean(canEmbed || safeExternalUrl(candidate?.url));
+  const sourceLabel = candidate ? SOURCE_LABELS[candidate.source_type] || candidate.source_type : "";
 
-  // Most picks are now articles rather than videos, so the affordance has to say
-  // which it is: an embedded player for YouTube, a new tab for everything else.
-  const actionLabel = canEmbed ? "Play" : "Read";
+  // The affordance says what will happen: a player for films, audio for podcasts,
+  // a new tab for everything else.
+  const actionLabel = audioUrl ? "Listen" : canEmbed ? "Play" : "Read";
 
   const sourceUrl = safeExternalUrl(candidate?.url);
   const creatorUrl = safeExternalUrl(candidate?.creator_url);
@@ -322,7 +339,7 @@ export default function Home() {
                 </a>
               ) : candidate.creator_name}
               <span style={{ color: 'var(--line-strong)' }}> / </span>
-              {candidate.source_type}
+              {sourceLabel}
             </>
           ) : "The engine is selecting the next diamond."}
         </p>
@@ -335,13 +352,27 @@ export default function Home() {
 
         {/* Media */}
         <div className="mt-8">
-          {isPlaying && canEmbed ? (
+          {isPlaying && audioUrl ? (
+            // Rendered only once Listen is pressed, so nothing is requested from the
+            // podcast's audio host before then.
+            <div style={{ border: '1px solid var(--line-strong)' }}>
+              <Thumbnail
+                src={candidate?.thumbnail_url}
+                alt={candidate?.title || ""}
+                className="w-full aspect-video"
+                fallback={null}
+              />
+              <audio className="w-full block" src={audioUrl} controls autoPlay preload="none" />
+            </div>
+          ) : isPlaying && canEmbed ? (
             <div className="w-full aspect-video" style={{ border: '1px solid var(--line-strong)' }}>
               <iframe
                 className="w-full h-full"
-                src={`https://www.youtube-nocookie.com/embed/${candidate!.source_id}?autoplay=1&rel=0`}
+                src={youtubeId
+                  ? `https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&rel=0`
+                  : `https://player.vimeo.com/video/${vimeoId}?dnt=1&autoplay=1`}
                 title={candidate!.title}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share"
                 referrerPolicy="strict-origin-when-cross-origin"
                 allowFullScreen
               />
@@ -369,7 +400,7 @@ export default function Home() {
                   // rectangle, so the gist is readable at a glance.
                   <div className="h-full flex flex-col justify-center px-6 md:px-10 py-6">
                     <p className="label" style={{ color: 'var(--accent)' }}>
-                      {candidate?.tone || candidate?.source_type || "Reading"}
+                      {candidate?.tone || sourceLabel || "Reading"}
                     </p>
                     <p className="display mt-2 text-lg md:text-2xl leading-snug"
                        style={{ color: 'var(--ink)' }}>
@@ -394,7 +425,8 @@ export default function Home() {
                       borderRadius: 'var(--radius-sm)',
                     }}
                   >
-                    {canEmbed ? <Play size={14} fill="currentColor" /> : <BookOpen size={14} />}
+                    {audioUrl ? <Headphones size={14} />
+                      : canEmbed ? <Play size={14} fill="currentColor" /> : <BookOpen size={14} />}
                     {actionLabel}
                   </span>
                 </div>

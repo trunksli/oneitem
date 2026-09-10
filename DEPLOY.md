@@ -161,8 +161,19 @@ brand-new interpreter), pin the runtime: add `PYTHON_VERSION` = `3.12.8` to the
 API service's environment variables and redeploy. `requirements.txt` uses
 minimum-version floors, so it otherwise installs whatever is current.
 
-**The chat is unmoderated and public.** There is no rate limiting, spam
-filtering, or delete tooling yet. Worth knowing before sharing the link widely.
+**The chat is unmoderated and public.** Posting is rate-limited per visitor, but
+there is no spam filtering or delete tooling yet. Worth knowing before sharing
+the link widely.
+
+**Sources live in `backend/app/sources.py`.** 34 YouTube channels, 25 article
+feeds, Vimeo Staff Picks and 12 podcasts. Each run adds at most 3 new items per
+source and scores at most `MAX_SCORING_PER_RUN` (40) of them, taking turns by
+medium, so a Gemini bill cannot run away and no medium starves. YouTube costs
+about 100 of the free 10,000 daily quota units per run. The first deploy with
+this list queues a few hundred candidates; they are scored over the following
+runs. On Postgres, startup adds `VIMEO` and `PODCAST` to the source-type enum --
+if `/status` or the logs show `FAILED adding source type`, ingestion of those two
+media will fail until it succeeds.
 
 ---
 

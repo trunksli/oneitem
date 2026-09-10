@@ -19,6 +19,11 @@ from .themes import DEFAULT_THEME, normalize_theme
 MAX_COMMENT_LENGTH = 500
 MAX_DISPLAY_NAME_LENGTH = 40
 
+# Pick selection: how many top candidates are considered, and how close (in
+# diamond points) a candidate from a different medium must be to win the slot.
+ROTATION_WINDOW = 25
+MEDIUM_ROTATION_MARGIN = float(os.getenv("MEDIUM_ROTATION_MARGIN", "10"))
+
 
 class NotFound(Exception):
     """Raised when a requested row does not exist; the HTTP layer maps it to 404."""
@@ -97,20 +102,35 @@ def promote_next_pick(db):
 
     pending = db.query(models.ContentCandidate).filter(
         models.ContentCandidate.status == models.Status.PENDING_REVIEW)
+    by_score = models.ContentCandidate.diamond_score.desc()
 
-    top_candidate = None
+    contenders = []
     if previous is not None and previous.theme:
-        top_candidate = pending.filter(
+        contenders = pending.filter(
             models.ContentCandidate.theme != previous.theme
-        ).order_by(models.ContentCandidate.diamond_score.desc()).first()
+        ).order_by(by_score).limit(ROTATION_WINDOW).all()
 
     # Fall back to the overall best if every remaining candidate shares the theme
-    if top_candidate is None:
-        top_candidate = pending.order_by(
-            models.ContentCandidate.diamond_score.desc()).first()
+    if not contenders:
+        contenders = pending.order_by(by_score).limit(ROTATION_WINDOW).all()
 
-    if top_candidate is None:
+    if not contenders:
         return None
+    top_candidate = contenders[0]
+
+    # Medium rotation: after a video, prefer a near-equal article or podcast (and so
+    # on), so the day is not four videos running. Only among near-ties -- a clearly
+    # better pick still wins, whatever it is.
+    previous_candidate = db.get(models.ContentCandidate, previous.candidate_id) \
+        if previous is not None and previous.candidate_id else None
+    if previous_candidate is not None:
+        floor = (top_candidate.diamond_score or 0) - MEDIUM_ROTATION_MARGIN
+        for contender in contenders:
+            if (contender.diamond_score or 0) < floor:
+                break
+            if contender.source_type != previous_candidate.source_type:
+                top_candidate = contender
+                break
 
     hourly = models.HourlyOne(
         publish_time=current_slot,

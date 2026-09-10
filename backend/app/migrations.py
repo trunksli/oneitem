@@ -149,6 +149,46 @@ def _trim_stored_text(engine):
          "capped stored text for unscored candidates", optional=True)
 
 
+# Source types added after the initial schema
+NEW_SOURCE_TYPES = ("VIMEO", "PODCAST")
+
+
+def _extend_source_type(engine, is_postgres):
+    """Add new source types to the native Postgres enum.
+
+    SQLite stores the label as plain text, so only Postgres needs this. ALTER TYPE
+    ... ADD VALUE cannot run inside a transaction block before Postgres 12, so each
+    value is added on its own autocommit connection.
+    """
+    if not is_postgres:
+        return
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(text(
+                "SELECT t.typname FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid "
+                "WHERE e.enumlabel = 'YOUTUBE' LIMIT 1")).fetchone()
+            if row is None:
+                return  # source_type is not a native enum; nothing to extend
+            type_name = row[0]
+            existing = {r[0] for r in conn.execute(text(
+                "SELECT e.enumlabel FROM pg_enum e JOIN pg_type t ON e.enumtypid = t.oid "
+                "WHERE t.typname = :name"), {"name": type_name})}
+    except Exception as e:
+        print("migration: could not read source types (%s)" % e)
+        return
+
+    for value in NEW_SOURCE_TYPES:
+        if value in existing:
+            continue
+        try:
+            # Both names come from this file and the catalog, never from input.
+            with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+                conn.execute(text('ALTER TYPE "%s" ADD VALUE IF NOT EXISTS \'%s\'' % (type_name, value)))
+            print("migration: added source type %s" % value)
+        except Exception as e:
+            print("migration: FAILED adding source type %s -- %s" % (value, e))
+
+
 def verify_schema(engine):
     """Which expected columns are still missing. Empty list means the schema is current."""
     missing = []
@@ -167,6 +207,7 @@ def ensure_schema(engine):
         _relax_theme_columns(engine, is_postgres)
         _normalize_theme_values(engine)
         _trim_stored_text(engine)
+        _extend_source_type(engine, is_postgres)
 
         missing = verify_schema(engine)
         if missing:

@@ -16,7 +16,7 @@ import traceback
 
 from sqlalchemy import func
 
-from . import database, models, slots
+from . import database, models, slots, sources
 from .ai_scoring import score_candidate
 from .ingestion import ingest_seed_channels
 from .outcomes import check_pick_outcomes
@@ -25,10 +25,40 @@ from .rss_ingestion import ingest_feeds
 
 PIPELINE_EVERY_HOURS = int(os.getenv("PIPELINE_EVERY_HOURS", "6"))
 
-SEED_CHANNELS = [
-    "UCMOqf8ab-42UUQIdVoKwjlQ",  # Practical Engineering
-    "UCy0tKL1T7wFoYcxCe0xjN6Q",  # Technology Connections
-]
+# Each scoring is one Gemini call. Anything over the cap waits for the next run.
+MAX_SCORING_PER_RUN = int(os.getenv("MAX_SCORING_PER_RUN", "40"))
+
+SEED_CHANNELS = list(sources.YOUTUBE_CHANNELS)
+
+FEED_GROUPS = (
+    ("article", sources.ARTICLE_FEEDS),
+    ("vimeo", sources.VIMEO_FEEDS),
+    ("podcast", sources.PODCAST_FEEDS),
+)
+
+
+def select_for_scoring(pending, limit):
+    """Which pending candidates to score this run: newest first, taking turns by medium.
+
+    Without turns, whichever medium has the most items (there are more article
+    feeds than anything) would use the whole budget, and the others would never
+    reach the pool of scored candidates at all.
+    """
+    def newest(c):
+        return c.upload_date or c.discovered_date or datetime.datetime.min
+
+    queues = {}
+    for candidate in sorted(pending, key=newest, reverse=True):
+        medium = getattr(candidate.source_type, "value", candidate.source_type)
+        queues.setdefault(medium, []).append(candidate)
+
+    ordered = [queues[medium] for medium in sorted(queues)]
+    chosen = []
+    while len(chosen) < limit and any(ordered):
+        for queue in ordered:
+            if queue and len(chosen) < limit:
+                chosen.append(queue.pop(0))
+    return chosen
 
 
 def pipeline_is_due(db):
@@ -44,18 +74,26 @@ def pipeline_is_due(db):
 
 
 def refresh_candidates(db):
-    """Ingest from all sources, then score everything still pending."""
+    """Ingest from all sources, then score a capped, mixed batch of what is pending."""
     if os.getenv("YOUTUBE_API_KEY"):
         ingest_seed_channels(db, SEED_CHANNELS)
     else:
         print("YOUTUBE_API_KEY not set - skipping YouTube ingestion.")
-    ingest_feeds(db)
+    for kind, feeds in FEED_GROUPS:
+        # One broken medium must not stop the others
+        try:
+            ingest_feeds(db, feeds, kind=kind)
+        except Exception:
+            print("%s ingestion failed:" % kind)
+            traceback.print_exc()
+            db.rollback()
 
     pending = db.query(models.ContentCandidate).filter(
         models.ContentCandidate.status == models.Status.PENDING_AI
     ).all()
-    print("Scoring %d pending candidates..." % len(pending))
-    for candidate in pending:
+    batch = select_for_scoring(pending, MAX_SCORING_PER_RUN)
+    print("Scoring %d of %d pending candidates..." % (len(batch), len(pending)))
+    for candidate in batch:
         score_candidate(db, candidate)
 
 

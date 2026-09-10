@@ -11,6 +11,9 @@ class SourceType(str, enum.Enum):
     YOUTUBE = "YOUTUBE"
     RSS = "RSS"
     WEB = "WEB"
+    # Added later: on Postgres these need ALTER TYPE (see app/migrations.py)
+    VIMEO = "VIMEO"
+    PODCAST = "PODCAST"
 
 class Status(str, enum.Enum):
     PENDING_AI = "PENDING_AI"

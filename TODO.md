@@ -117,6 +117,11 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
 
 ## Product
 
+- [x] (done, Phase 6) Broader sources: YouTube is back (34 channels), plus 25 article
+      feeds, Vimeo Staff Picks and 12 podcasts, with per-run caps, turn-taking in
+      scoring, and medium rotation when picking. See `backend/app/sources.py`.
+- [ ] Vimeo terms: confirm embedding Staff Picks needs nothing beyond the player's
+      own terms (added to the legal review list).
 - [ ] **Reengagement is the glaring hole** — HIGH. A scheduled-drop product with no
       way to be told about the drop: no email capture, no push, no RSS output.
 - [ ] Creator-side flywheel: notify featured creators (cheapest distribution there

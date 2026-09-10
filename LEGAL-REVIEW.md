@@ -64,6 +64,22 @@ and a site-wide footer say so. Check whether any disclosure obligation applies
 beyond this, and whether AI-written characterisations of third parties' work
 carry misrepresentation risk.
 
+## 7. Vimeo films and podcasts
+
+ONE now also features Vimeo Staff Picks (played in Vimeo's own player with
+`dnt=1`) and podcast episodes (streamed from the publisher's audio host through
+the browser's own player, only after the visitor presses Listen). It reads
+Vimeo's public oEmbed endpoint for titles and thumbnails; it never downloads or
+re-hosts audio or video.
+
+- **Vimeo:** confirm that embedding public films through the standard player
+  needs nothing beyond Vimeo's own terms, and whether the Terms should name Vimeo
+  the way they name YouTube.
+- **Podcasts:** playing an episode's public enclosure URL is what every podcast
+  app does, but ONE is a website, not an app. Confirm that is fine, and that the
+  Privacy Policy's note (audio hosts may measure downloads, including network
+  address) is enough disclosure.
+
 ## Facts the documents depend on
 
 If any of these change, the documents must change with them:
@@ -72,6 +88,8 @@ If any of these change, the documents must change with them:
 | --- | --- |
 | No cookies; no analytics or ad scripts | Whole frontend; fonts self-hosted via `next/font` |
 | YouTube plays in privacy-enhanced mode | `frontend/src/app/page.tsx` embed URL |
+| Vimeo plays with do-not-track (`dnt=1`) | `frontend/src/app/page.tsx` embed URL |
+| Nothing requested from an audio host before Listen | `frontend/src/app/page.tsx` (`<audio>` renders only after Listen) |
 | IP never stored; daily salt deleted | `backend/app/visitors.py` |
 | One vote per visitor per pick, changeable | `backend/app/queries.py` `create_feedback` |
 | Chat deleted after 30 days | `backend/app/queries.py` `purge_expired`, `COMMENT_RETENTION_DAYS` |

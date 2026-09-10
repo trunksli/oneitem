@@ -38,10 +38,10 @@ Done in that pass and not repeated below: `javascript:` URL sanitation, the
 
 *Not legal advice — for review by an actual attorney.*
 
-- [ ] **Privacy Policy** — HIGH. None exists. Contractually required by the
+- [x] (drafted, Phase 4; needs counsel, see LEGAL-REVIEW.md) **Privacy Policy** — HIGH. None exists. Contractually required by the
       YouTube API Services Terms because we use the Data API, and expected under
       CalOPPA/CCPA for a public site.
-- [ ] **Terms of Service**, including limitation of liability, disclaimer of
+- [x] (drafted, Phase 4; needs counsel) **Terms of Service**, including limitation of liability, disclaimer of
       warranties, acceptable-use rules for the chat, and a DMCA agent — HIGH.
 - [x] (done, Phase 1) **Switch the embed to `youtube-nocookie.com`** — MEDIUM, one-word change.
       The current embed sets third-party tracking cookies before any consent,
@@ -50,11 +50,11 @@ Done in that pass and not repeated below: `javascript:` URL sanitation, the
       to 20,000 characters of third-party articles in `transcript`. Store only
       what scoring needs (excerpt plus hash), and honour `robots.txt` with an
       identifying User-Agent.
-- [ ] **Moderation and takedown path for chat** — MEDIUM. Section 230 covers the
+- [ ] (partly: email reporting and 30-day deletion; no in-product tool yet) **Moderation and takedown path for chat** — MEDIUM. Section 230 covers the
       host, but there is currently no way to report or delete a comment.
-- [ ] Age gate / COPPA consideration: free-text and display name are collected
+- [x] (addressed in Terms as 13+; see LEGAL-REVIEW.md) Age gate / COPPA consideration: free-text and display name are collected
       from anyone.
-- [ ] Disclose that editorial summaries are AI-generated.
+- [x] (done, Phase 4: site footer + Terms) Disclose that editorial summaries are AI-generated.
 
 ## Accessibility (ADA / WCAG)
 

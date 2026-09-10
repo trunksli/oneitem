@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Spline_Sans } from "next/font/google";
 import "./globals.css";
+import SiteFooter from "@/components/site-footer";
 
 // Balmody's web sans. Self-hosted at build time by next/font, so there is no
 // render-blocking request to Google and no flash of unstyled text.
@@ -20,7 +21,12 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${splineSans.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        {/* In the layout so every page, and the static HTML crawlers read, carries
+            the legal links and the AI disclosure. */}
+        <SiteFooter />
+      </body>
     </html>
   );
 }

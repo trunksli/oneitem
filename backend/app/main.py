@@ -74,7 +74,7 @@ def admin_login(credentials: AdminLogin):
     if not auth.is_configured():
         raise HTTPException(
             status_code=503,
-            detail="Admin access is not configured (set ADMIN_USERNAME, ADMIN_PASSWORD and ADMIN_TOKEN)")
+            detail="Admin access is not configured (set ADMIN_USERNAME and ADMIN_PASSWORD)")
     if not auth.check_credentials(credentials.username, credentials.password):
         raise HTTPException(status_code=401, detail="Incorrect username or password")
     token, expires_at = auth.issue_token()

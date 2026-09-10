@@ -392,7 +392,7 @@ export default function Admin() {
           <section className="mt-16 mb-16">
             <h2 className="display text-2xl">Source scoreboard</h2>
             <p className="mt-2 mb-5 text-[15px]" style={{ color: 'var(--ink-muted)' }}>
-              A high never-seen rate with low 7-day growth means we surfaced something the
+              A high new-to-me rate with low 7-day growth means we surfaced something the
               internet was not going to deliver on its own.
             </p>
             <div className="overflow-x-auto" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
@@ -403,7 +403,7 @@ export default function Admin() {
                     <th style={{ ...headCell, textAlign: 'right' }}>Cands</th>
                     <th style={{ ...headCell, textAlign: 'right' }}>Avg Diamond</th>
                     <th style={{ ...headCell, textAlign: 'right' }}>Featured</th>
-                    <th style={{ ...headCell, textAlign: 'right' }}>Never-Seen</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>New-to-me</th>
                     <th style={{ ...headCell, textAlign: 'right' }}>Avg 7d</th>
                     <th style={{ ...headCell, textAlign: 'right' }}>Blowups</th>
                   </tr>

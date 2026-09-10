@@ -209,6 +209,19 @@ def main():
         check("rejects junk", not auth.verify_token("garbage"))
         check("rejects empty", not auth.verify_token(""))
 
+        # The simple setup: username and password only, no ADMIN_TOKEN at all.
+        os.environ.pop("ADMIN_TOKEN", None)
+        check("configured with just username and password", auth.is_configured() is True)
+        derived_token, _ = auth.issue_token()
+        check("session works with a derived signing key", auth.verify_token(derived_token))
+        check("no raw-token bypass when ADMIN_TOKEN is unset", not auth.verify_token("test-secret"))
+        os.environ["ADMIN_PASSWORD"] = "a new password"
+        check("changing the password signs existing sessions out", not auth.verify_token(derived_token))
+        os.environ["ADMIN_PASSWORD"] = "correct horse"
+        os.environ.pop("ADMIN_USERNAME", None)
+        check("not configured without a username", auth.is_configured() is False)
+        os.environ["ADMIN_USERNAME"] = "michael"
+
         print("\n24-hour schedule runway")
         slots = queries.get_schedule(db, 24)
         check("returns 24 slots", len(slots) == 24, str(len(slots)))

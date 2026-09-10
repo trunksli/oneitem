@@ -131,7 +131,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/admin/login":
                 if not auth.is_configured():
                     self._send({"detail": "Admin access is not configured "
-                                          "(set ADMIN_USERNAME, ADMIN_PASSWORD and ADMIN_TOKEN)"}, 503)
+                                          "(set ADMIN_USERNAME and ADMIN_PASSWORD)"}, 503)
                 elif auth.check_credentials(data.get("username"), data.get("password")):
                     token, expires_at = auth.issue_token()
                     self._send({"token": token, "expires_at": expires_at})

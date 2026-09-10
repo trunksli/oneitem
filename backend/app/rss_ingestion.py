@@ -11,14 +11,17 @@ public content API and scraping violates their ToS. The plan is to accept
 those via user-submitted links (Phase C) using official embeds.
 """
 import datetime
+import os
 import re
 import requests
+from urllib import robotparser
+from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from sqlalchemy.orm import Session
 
 from . import models
-from .previews import choose_preview
+from .previews import SCORING_TEXT_LIMIT, choose_preview
 
 # High-quality "obsessive expert" feeds. Edit freely.
 SEED_FEEDS = [
@@ -31,6 +34,43 @@ MAX_ITEMS_PER_FEED = 10
 ARTICLE_TEXT_LIMIT = 20000
 
 ATOM_NS = "{http://www.w3.org/2005/Atom}"
+
+# A well-behaved crawler says who it is and how to reach its operator.
+CRAWLER_TOKEN = "ONE-curator"
+USER_AGENT = "%s/0.2 (+%s; %s)" % (
+    CRAWLER_TOKEN,
+    os.getenv("PUBLIC_SITE_URL", "https://one-web-bwjk.onrender.com"),
+    os.getenv("CRAWLER_CONTACT", "balmodyco@gmail.com"),
+)
+
+_robots_cache = {}
+
+
+def allowed_by_robots(url):
+    """Whether robots.txt permits fetching this page.
+
+    Follows RFC 9309: a missing robots.txt (4xx) allows everything, while an
+    unreachable one (5xx or a network error) is treated as disallowing
+    everything. Cached per host for the life of the process.
+    """
+    parts = urlparse(url)
+    base = "%s://%s" % (parts.scheme, parts.netloc)
+    parser = _robots_cache.get(base)
+    if parser is None:
+        parser = robotparser.RobotFileParser()
+        try:
+            res = requests.get(base + "/robots.txt", timeout=10,
+                               headers={"User-Agent": USER_AGENT})
+            if res.status_code >= 500:
+                parser.disallow_all = True
+            elif res.status_code >= 400:
+                parser.parse([])
+            else:
+                parser.parse(res.text.splitlines())
+        except Exception:
+            parser.disallow_all = True
+        _robots_cache[base] = parser
+    return parser.can_fetch(CRAWLER_TOKEN, url)
 
 
 class _MetaExtractor(HTMLParser):
@@ -125,8 +165,12 @@ def strip_html(html_text: str) -> str:
 
 def fetch_article(url: str):
     """Fetches an article once and returns (readable_text, preview_image_url)."""
+    if not allowed_by_robots(url):
+        # Respect the publisher: use only what their feed chose to syndicate.
+        print(f"robots.txt disallows {url}; using feed content only")
+        return "", None
     try:
-        res = requests.get(url, timeout=20, headers={"User-Agent": "ONE-curator/0.1"})
+        res = requests.get(url, timeout=20, headers={"User-Agent": USER_AGENT})
         res.raise_for_status()
         html = res.text
 
@@ -228,7 +272,7 @@ def ingest_feeds(db: Session, feed_urls=None):
     for feed_url in feed_urls:
         print(f"Fetching feed: {feed_url}")
         try:
-            res = requests.get(feed_url, timeout=20, headers={"User-Agent": "ONE-curator/0.1"})
+            res = requests.get(feed_url, timeout=20, headers={"User-Agent": USER_AGENT})
             res.raise_for_status()
             feed_title, entries = parse_feed(res.text)
             if not entries:
@@ -260,7 +304,8 @@ def ingest_feeds(db: Session, feed_urls=None):
                     upload_date=entry['published'],
                     thumbnail_url=image_url or "",
                     preview_text=preview,
-                    transcript=article_text,
+                    # Only what the scorer reads is kept, and only until it is scored.
+                    transcript=(article_text or "")[:SCORING_TEXT_LIMIT] or None,
                 )
                 db.add(candidate)
                 added += 1

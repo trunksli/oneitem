@@ -45,7 +45,8 @@ def build_old_schema(engine):
                 discovered_date TIMESTAMP,
                 thumbnail_url VARCHAR,
                 status VARCHAR(20),
-                theme VARCHAR(40)
+                theme VARCHAR(40),
+                transcript TEXT
             )"""))
         conn.execute(text("""
             CREATE TABLE hourly_ones (
@@ -64,8 +65,11 @@ def build_old_schema(engine):
                 created_at TIMESTAMP
             )"""))
         conn.execute(text(
-            "INSERT INTO content_candidates (id, title, theme, status) "
-            "VALUES ('c1', 'Old row', 'ENGINEERING', 'PENDING_REVIEW')"))
+            "INSERT INTO content_candidates (id, title, theme, status, transcript) "
+            "VALUES ('c1', 'Old row', 'ENGINEERING', 'PENDING_REVIEW', :t)"), {"t": "x" * 20000})
+        conn.execute(text(
+            "INSERT INTO content_candidates (id, title, theme, status, transcript) "
+            "VALUES ('c3', 'Unscored', 'HISTORY', 'PENDING_AI', :t)"), {"t": "y" * 9000})
         conn.execute(text(
             "INSERT INTO content_candidates (id, title, theme, status) "
             "VALUES ('c2', 'Another', 'WEIRD_FOOD', 'PENDING_REVIEW')"))
@@ -108,6 +112,15 @@ def main():
         check("ENGINEERING -> Engineering", themes.get("c1") == "Engineering", str(themes))
         check("WEIRD_FOOD -> Food", themes.get("c2") == "Food", str(themes))
         check("ODDBALL -> Oddities", hourly_theme == "Oddities", str(hourly_theme))
+
+        print("\nfull third-party text is not retained")
+        with engine.connect() as conn:
+            scored = conn.execute(text(
+                "SELECT transcript FROM content_candidates WHERE id = 'c1'")).scalar()
+            pending = conn.execute(text(
+                "SELECT length(transcript) FROM content_candidates WHERE id = 'c3'")).scalar()
+        check("scored candidate's text is cleared", scored is None, repr((scored or "")[:10]))
+        check("unscored candidate keeps only what scoring reads", pending == 3000, str(pending))
 
         print("\nidempotent")
         ensure_schema(engine)

@@ -24,6 +24,11 @@ _BOILERPLATE = re.compile("|".join(BOILERPLATE_PATTERNS), re.IGNORECASE)
 
 MIN_PREVIEW_CHARS = 60
 
+# How much of an article or transcript the scorer reads. It is also the most we
+# ever store, and only until the item is scored -- full copies of third-party
+# work are not retained.
+SCORING_TEXT_LIMIT = 3000
+
 
 def looks_like_boilerplate(text):
     """True if this reads like a sponsor pitch or page furniture, not content."""

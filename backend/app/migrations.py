@@ -22,6 +22,7 @@ import traceback
 
 from sqlalchemy import inspect, text
 
+from .previews import SCORING_TEXT_LIMIT
 from .themes import normalize_theme
 
 # Columns added after the initial schema: (table, column, SQL type)
@@ -127,6 +128,27 @@ def _normalize_theme_values(engine):
                      {"new": corrected, "old": value})
 
 
+def _trim_stored_text(engine):
+    """Full third-party text is no longer retained.
+
+    Scored candidates have no further use for it, so it is cleared; candidates
+    still waiting to be scored keep only what the scorer reads.
+    """
+    if "content_candidates" not in _table_names(engine):
+        return
+    if "transcript" not in _columns(engine, "content_candidates"):
+        return
+    _run(engine,
+         "UPDATE content_candidates SET transcript = NULL "
+         "WHERE transcript IS NOT NULL AND status <> 'PENDING_AI'",
+         "cleared stored text for scored candidates", optional=True)
+    _run(engine,
+         "UPDATE content_candidates SET transcript = substr(transcript, 1, %d) "
+         "WHERE status = 'PENDING_AI' AND length(transcript) > %d"
+         % (SCORING_TEXT_LIMIT, SCORING_TEXT_LIMIT),
+         "capped stored text for unscored candidates", optional=True)
+
+
 def verify_schema(engine):
     """Which expected columns are still missing. Empty list means the schema is current."""
     missing = []
@@ -144,6 +166,7 @@ def ensure_schema(engine):
         _add_missing_columns(engine)
         _relax_theme_columns(engine, is_postgres)
         _normalize_theme_values(engine)
+        _trim_stored_text(engine)
 
         missing = verify_schema(engine)
         if missing:

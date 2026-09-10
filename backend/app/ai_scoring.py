@@ -3,7 +3,7 @@ import json
 import requests
 from sqlalchemy.orm import Session
 from . import models
-from .previews import choose_preview, is_usable
+from .previews import SCORING_TEXT_LIMIT, choose_preview, is_usable
 from .themes import THEMES, TONES, normalize_theme, normalize_tone
 
 try:
@@ -93,8 +93,8 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     print(f"Scoring candidate: {candidate.title}")
     
     if candidate.source_type == models.SourceType.YOUTUBE:
+        # Used for this prompt only; the transcript is never written to the database.
         transcript = get_video_transcript(candidate.source_id)
-        candidate.transcript = transcript
         content_kind = "video"
     else:
         # RSS/web candidates store their extracted article text in the same slot
@@ -113,7 +113,7 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     Title: {candidate.title}
     Creator/Publication: {candidate.creator_name}
     Description: {(candidate.description or "")[:500]}...
-    {"Transcript" if content_kind == "video" else "Article text"}: {(transcript or "")[:3000]}...
+    {"Transcript" if content_kind == "video" else "Article text"}: {(transcript or "")[:SCORING_TEXT_LIMIT]}...
     
     Please provide a JSON response with the following keys:
     - quality_score: Integer 0-100. How well-made, substantive, and worthwhile is this?
@@ -245,6 +245,9 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
         # Cap the final score at 100
         candidate.diamond_score = max(0, min(100, base_score + candidate.outlier_score - penalty))
         candidate.status = models.Status.PENDING_REVIEW
+
+    # Scored: the source text has done its job, so it is not kept.
+    candidate.transcript = None
 
     db.commit()
     return True

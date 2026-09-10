@@ -273,7 +273,7 @@ export default function Home() {
             <div className="w-full aspect-video" style={{ border: '1px solid var(--line-strong)' }}>
               <iframe
                 className="w-full h-full"
-                src={`https://www.youtube.com/embed/${candidate!.source_id}?autoplay=1`}
+                src={`https://www.youtube-nocookie.com/embed/${candidate!.source_id}?autoplay=1&rel=0`}
                 title={candidate!.title}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 referrerPolicy="strict-origin-when-cross-origin"
@@ -381,21 +381,21 @@ export default function Home() {
             </p>
           ) : (
             <>
-              <p className="label" style={{ color: 'var(--ink-faint)' }}>Had you seen this before?</p>
+              <p className="label" style={{ color: 'var(--ink-faint)' }}>Was this new to you?</p>
               <div className="flex flex-col sm:flex-row gap-3 mt-4">
                 <button
                   onClick={() => handleFeedback("NEVER_SEEN")}
                   disabled={!hourlyOne?.hourly?.id}
                   className="btn btn-primary flex-1"
                 >
-                  Never Seen It
+                  New to me
                 </button>
                 <button
                   onClick={() => handleFeedback("KNEW_ALREADY")}
                   disabled={!hourlyOne?.hourly?.id}
                   className="btn btn-secondary flex-1"
                 >
-                  I Knew This
+                  Already knew this
                 </button>
               </div>
             </>

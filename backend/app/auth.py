@@ -6,7 +6,8 @@ login returns a short-lived signed token rather than the long-lived shared
 secret. Nothing is stored in the database: there is exactly one admin.
 
 The token is stateless (an expiry plus an HMAC over it), so it needs no session
-store and cannot be forged without ADMIN_TOKEN. Because it expires, a token
+store and cannot be forged without the signing key (ADMIN_TOKEN, or one derived
+from the credentials when that is unset). Because it expires, a token
 copied off a machine stops working on its own -- unlike the previous scheme,
 where the permanent secret sat in localStorage forever.
 """
@@ -20,13 +21,25 @@ SESSION_HOURS = int(os.getenv("ADMIN_SESSION_HOURS", "12"))
 
 
 def _secret():
-    """Signing key. ADMIN_TOKEN doubles as the secret so deployments need one fewer var."""
-    return (os.getenv("ADMIN_TOKEN") or "").encode("utf-8")
+    """Signing key for session tokens.
+
+    ADMIN_TOKEN if set; otherwise derived from the username and password, so a
+    deployment needs only ADMIN_USERNAME and ADMIN_PASSWORD. A useful side effect
+    of deriving it: changing the password invalidates every existing session.
+    """
+    explicit = os.getenv("ADMIN_TOKEN") or ""
+    if explicit:
+        return explicit.encode("utf-8")
+    user = os.getenv("ADMIN_USERNAME") or ""
+    password = os.getenv("ADMIN_PASSWORD") or ""
+    if not (user and password):
+        return b""
+    return hashlib.sha256(("one-admin-session:%s:%s" % (user, password)).encode("utf-8")).digest()
 
 
 def is_configured():
-    """Admin access is disabled entirely unless credentials exist."""
-    return bool(os.getenv("ADMIN_USERNAME") and os.getenv("ADMIN_PASSWORD") and _secret())
+    """Sign-in works whenever a username and password are set."""
+    return bool(os.getenv("ADMIN_USERNAME") and os.getenv("ADMIN_PASSWORD"))
 
 
 def _sign(payload):
@@ -60,7 +73,9 @@ def verify_token(token):
     if not token or not _secret():
         return False
 
-    if hmac.compare_digest(str(token), os.getenv("ADMIN_TOKEN", "")):
+    # The raw ADMIN_TOKEN is an optional bypass for scripts, only when one is set.
+    raw = os.getenv("ADMIN_TOKEN") or ""
+    if raw and hmac.compare_digest(str(token), raw):
         return True
 
     try:

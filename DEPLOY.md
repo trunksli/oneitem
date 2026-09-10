@@ -63,9 +63,9 @@ Set on **`one-api`**:
 | `DATABASE_URL` | The Postgres Internal Database URL |
 | `GEMINI_API_KEY` | From Google AI Studio |
 | `YOUTUBE_API_KEY` | From Google Cloud Console |
-| `ADMIN_TOKEN` | Any long random string — signs admin sessions |
 | `ADMIN_USERNAME` | Your sign-in name for `/admin/` |
 | `ADMIN_PASSWORD` | Your sign-in password for `/admin/` |
+| `ADMIN_TOKEN` | *Optional.* A bearer token for scripts; not needed to sign in |
 | `ALLOWED_ORIGINS` | The frontend URL, e.g. `https://one-web.onrender.com` |
 | `RUN_SCHEDULER` | `1` |
 

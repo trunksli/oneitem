@@ -10,6 +10,7 @@ import Countdown from '@/components/countdown';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { safeExternalUrl, permalinkFor } from '@/lib/url';
 import { usePickParam } from '@/lib/use-pick-param';
+import { track } from '@/lib/events';
 
 
 interface Candidate {
@@ -49,7 +50,8 @@ export default function Home() {
   const [hourlyOne, setHourlyOne] = useState<HourlyResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [feedbackGiven, setFeedbackGiven] = useState(false);
+  // Answers remembered on this device only, so the chosen one shows and can be changed.
+  const [votesJson, setVotesJson] = usePersistentState("one_votes");
   const [copied, setCopied] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
 
@@ -67,7 +69,6 @@ export default function Home() {
           // New hour, new item: reset the player and feedback state
           if (prev?.hourly?.id && data?.hourly?.id && prev.hourly.id !== data.hourly.id) {
             setIsPlaying(false);
-            setFeedbackGiven(false);
           }
           return data;
         });
@@ -117,6 +118,12 @@ export default function Home() {
     return () => document.removeEventListener('keydown', onKey);
   }, [isChatOpen]);
 
+  // One anonymous "view" per pick per visitor per day (deduplicated server-side).
+  const viewedId = hourlyOne?.hourly?.id;
+  useEffect(() => {
+    if (viewedId) track(viewedId, "view");
+  }, [viewedId]);
+
   const handleSendComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim()) return;
@@ -136,11 +143,21 @@ export default function Home() {
     }
   };
 
+  const votes: Record<string, string> = (() => {
+    try { return JSON.parse(votesJson || "{}"); } catch { return {}; }
+  })();
+
   const handleFeedback = async (seenBefore: "NEVER_SEEN" | "KNEW_ALREADY") => {
     const hourlyId = hourlyOne?.hourly?.id;
-    if (!hourlyId || feedbackGiven) return;
+    if (!hourlyId || votes[hourlyId] === seenBefore) return;
 
-    setFeedbackGiven(true);
+    // Remember the answer on this device, capped so the map cannot grow forever.
+    // The server keeps one vote per visitor per pick, so changing it updates it.
+    const next: Record<string, string> = { ...votes, [hourlyId]: seenBefore };
+    const keys = Object.keys(next);
+    for (const key of keys.slice(0, Math.max(0, keys.length - 200))) delete next[key];
+    setVotesJson(JSON.stringify(next));
+
     try {
       await fetch(`${API_BASE}/feedback`, {
         method: "POST",
@@ -166,6 +183,7 @@ export default function Home() {
   const candidate: Candidate | null = hourlyOne?.candidate ?? null;
   const theme = (hourlyOne?.hourly?.theme || "Random").replace(/_/g, " ");
   const isStale = Boolean(hourlyOne?.is_stale);
+  const myVote = hourlyOne?.hourly?.id ? votes[hourlyOne.hourly.id] : undefined;
 
   // Only offer playback when there is something to play. The previous build showed
   // a Play badge even on the empty state, so clicking it did nothing at all.
@@ -180,13 +198,20 @@ export default function Home() {
   const creatorUrl = safeExternalUrl(candidate?.creator_url);
 
   const handlePlay = () => {
-    if (canEmbed) setIsPlaying(true);
-    else if (sourceUrl) window.open(sourceUrl, "_blank", "noopener,noreferrer");
+    const id = hourlyOne?.hourly?.id;
+    if (canEmbed) {
+      track(id, "play");
+      setIsPlaying(true);
+    } else if (sourceUrl) {
+      track(id, "read");
+      window.open(sourceUrl, "_blank", "noopener,noreferrer");
+    }
   };
 
   const handleShare = async () => {
     const id = hourlyOne?.hourly?.id;
     if (!id) return;
+    track(id, "copy_link");
     try {
       await navigator.clipboard.writeText(permalinkFor(id));
       setCopied(true);
@@ -365,7 +390,8 @@ export default function Home() {
               </button>
             ) : <span />}
             {sourceUrl && (
-              <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="label link-accent">
+              <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="label link-accent"
+                 onClick={() => track(hourlyOne?.hourly?.id, "open_original")}>
                 {canEmbed ? "Watch on YouTube" : "Open the original"} &#8599;
               </a>
             )}
@@ -386,30 +412,29 @@ export default function Home() {
         {/* Feedback */}
         <div className="mt-12" style={{ height: 1, background: 'var(--line)' }} />
         <div className="mt-8">
-          {feedbackGiven ? (
-            <p className="text-[15px]" style={{ color: 'var(--ink-muted)' }}>
-              Thank you &mdash; your answer decides what we surface next.
+          <p className="label" style={{ color: 'var(--ink-faint)' }}>Was this new to you?</p>
+          <div className="flex flex-col sm:flex-row gap-3 mt-4" role="group" aria-label="Was this new to you?">
+            <button
+              onClick={() => handleFeedback("NEVER_SEEN")}
+              disabled={!hourlyOne?.hourly?.id}
+              aria-pressed={myVote === "NEVER_SEEN"}
+              className={`btn flex-1 ${myVote === "KNEW_ALREADY" ? "btn-secondary" : "btn-primary"}`}
+            >
+              {myVote === "NEVER_SEEN" && <span aria-hidden="true">&#10003; </span>}New to me
+            </button>
+            <button
+              onClick={() => handleFeedback("KNEW_ALREADY")}
+              disabled={!hourlyOne?.hourly?.id}
+              aria-pressed={myVote === "KNEW_ALREADY"}
+              className={`btn flex-1 ${myVote === "KNEW_ALREADY" ? "btn-primary" : "btn-secondary"}`}
+            >
+              {myVote === "KNEW_ALREADY" && <span aria-hidden="true">&#10003; </span>}Already knew this
+            </button>
+          </div>
+          {myVote && (
+            <p className="text-[15px] mt-3" style={{ color: 'var(--ink-muted)' }}>
+              Thank you &mdash; your answer shapes what we surface next. Changed your mind? Choose the other one.
             </p>
-          ) : (
-            <>
-              <p className="label" style={{ color: 'var(--ink-faint)' }}>Was this new to you?</p>
-              <div className="flex flex-col sm:flex-row gap-3 mt-4">
-                <button
-                  onClick={() => handleFeedback("NEVER_SEEN")}
-                  disabled={!hourlyOne?.hourly?.id}
-                  className="btn btn-primary flex-1"
-                >
-                  New to me
-                </button>
-                <button
-                  onClick={() => handleFeedback("KNEW_ALREADY")}
-                  disabled={!hourlyOne?.hourly?.id}
-                  className="btn btn-secondary flex-1"
-                >
-                  Already knew this
-                </button>
-              </div>
-            </>
           )}
         </div>
       </div>

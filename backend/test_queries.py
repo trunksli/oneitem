@@ -407,6 +407,89 @@ def main():
             models.HourlyOne.publish_time < slots.next_slot_start(begins)).count()
         check("no duplicate pick in the slot", in_slot == 1, str(in_slot))
 
+        print("")
+        print("privacy-preserving visitor keys")
+        from app import ratelimit, visitors
+        k1 = visitors.visitor_key(db, "203.0.113.7", "Mozilla/5.0 test")
+        k2 = visitors.visitor_key(db, "203.0.113.7", "Mozilla/5.0 test")
+        k3 = visitors.visitor_key(db, "198.51.100.2", "Mozilla/5.0 test")
+        check("same visitor, same day, same key", k1 == k2)
+        check("a different visitor gets a different key", k1 != k3)
+        check("the key does not contain the address", "203.0.113.7" not in k1 and len(k1) == 32)
+        visitors._cache.clear()
+        tomorrow = (datetime.datetime.utcnow() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        k_next = visitors.visitor_key(db, "203.0.113.7", "Mozilla/5.0 test", day=tomorrow)
+        check("tomorrow's key cannot be linked to today's", k_next != k1)
+        check("earlier salts are destroyed",
+              db.query(models.DailySalt).filter(models.DailySalt.day < tomorrow).count() == 0)
+        visitors._cache.clear()
+        check("the proxy-appended (rightmost) hop is trusted",
+              visitors.client_ip("1.1.1.1, 9.9.9.9", "10.0.0.1") == "9.9.9.9")
+        check("falls back to the socket address", visitors.client_ip(None, "10.0.0.1") == "10.0.0.1")
+
+        print("")
+        print("one vote per visitor, changeable")
+        def votes_for(pick):
+            return db.query(models.Feedback).filter(models.Feedback.hourly_one_id == pick).count()
+        before = votes_for("hourly-past")
+        first = queries.create_feedback(db, "hourly-past", "NEVER_SEEN", "visitor-a")
+        again = queries.create_feedback(db, "hourly-past", "NEVER_SEEN", "visitor-a")
+        switched = queries.create_feedback(db, "hourly-past", "KNEW_ALREADY", "visitor-a")
+        check("a repeat vote does not add a row", votes_for("hourly-past") == before + 1,
+              "%d -> %d" % (before, votes_for("hourly-past")))
+        check("the first vote is new", first["changed"] is False)
+        check("a repeat vote is an update", again["changed"] is True)
+        check("changing the answer is recorded", switched["seen_before"] == "KNEW_ALREADY")
+        queries.create_feedback(db, "hourly-past", "NEVER_SEEN", "visitor-b")
+        check("a different visitor adds a vote", votes_for("hourly-past") == before + 2)
+        try:
+            queries.create_feedback(db, "no-such-pick", "NEVER_SEEN", "visitor-a")
+            check("voting on an unknown pick is refused", False)
+        except queries.NotFound:
+            check("voting on an unknown pick is refused", True)
+
+        print("")
+        print("engagement events")
+        check("a view is recorded",
+              queries.record_event(db, "hourly-past", "view", "visitor-a")["recorded"] is True)
+        check("a repeat view is not double-counted",
+              queries.record_event(db, "hourly-past", "view", "visitor-a")["recorded"] is False)
+        queries.record_event(db, "hourly-past", "view", "visitor-b")
+        queries.record_event(db, "hourly-past", "view", "visitor-c")
+        queries.record_event(db, "hourly-past", "play", "visitor-a")
+        queries.record_event(db, "hourly-past", "open_original", "visitor-a")
+        queries.record_event(db, "hourly-past", "read", "visitor-b")
+        try:
+            queries.record_event(db, "hourly-past", "hack", "visitor-a")
+            check("unknown event types are refused", False)
+        except ValueError:
+            check("unknown event types are refused", True)
+        past = [o for o in queries.get_outcomes(db) if o["hourly_id"] == "hourly-past"][0]
+        check("views are counted per visitor", past["views"] == 3, str(past["views"]))
+        check("engagement counts people, not clicks", past["engaged"] == 2, str(past["engaged"]))
+        check("CTR is engaged over views", past["ctr"] == 0.67, str(past["ctr"]))
+        pe = [x for x in queries.get_source_stats(db) if x["creator_name"] == "Practical Engineering"][0]
+        check("the source scoreboard carries views", pe["views"] >= 3, str(pe["views"]))
+
+        print("")
+        print("rate limiting")
+        ratelimit.reset()
+        allowed = [ratelimit.allow("comments", "visitor-z", now=100.0 + i) for i in range(6)]
+        check("five comments a minute are allowed", allowed[:5] == [True] * 5)
+        check("the sixth is refused", allowed[5] is False)
+        check("the window slides", ratelimit.allow("comments", "visitor-z", now=161.0))
+
+        print("")
+        print("retention")
+        db.add(models.Comment(id="c-old", content="ancient",
+                              created_at=datetime.datetime.utcnow() - datetime.timedelta(days=45)))
+        db.commit()
+        queries.purge_expired(db)
+        check("comments past retention are deleted",
+              db.query(models.Comment).filter(models.Comment.id == "c-old").count() == 0)
+        check("recent comments are kept",
+              db.query(models.Comment).filter(models.Comment.id == "c1").count() == 1)
+
         for missing in ("feature_candidate", "reject_candidate"):
             try:
                 getattr(queries, missing)(db, "does-not-exist")

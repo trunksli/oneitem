@@ -22,7 +22,7 @@ from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
 load_dotenv()
 
-from app import auth, database, models, queries
+from app import auth, database, models, queries, ratelimit, visitors
 from app.migrations import ensure_schema
 
 MAX_BODY_BYTES = 16 * 1024
@@ -54,6 +54,12 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(data, dict):
             return None, "Expected a JSON object"
         return data, None
+
+    def _visitor(self, db):
+        """Daily-salted visitor hash; the address is used to compute it and discarded."""
+        ip = visitors.client_ip(self.headers.get("X-Forwarded-For"),
+                                self.client_address[0] if self.client_address else "")
+        return visitors.visitor_key(db, ip, self.headers.get("User-Agent"))
 
     def _is_admin(self):
         return auth.verify_token(self.headers.get("X-Admin-Token"))
@@ -123,11 +129,25 @@ class Handler(BaseHTTPRequestHandler):
         db = database.SessionLocal()
         try:
             if path == "/comments":
-                self._send(queries.create_comment(
-                    db, data.get("content"), data.get("display_name")), 201)
+                if not ratelimit.allow("comments", self._visitor(db)):
+                    self._send({"detail": "Too many requests; please slow down."}, 429)
+                else:
+                    self._send(queries.create_comment(
+                        db, data.get("content"), data.get("display_name")), 201)
             elif path == "/feedback":
-                self._send(queries.create_feedback(
-                    db, data.get("hourly_one_id"), data.get("seen_before")), 201)
+                key = self._visitor(db)
+                if not ratelimit.allow("feedback", key):
+                    self._send({"detail": "Too many requests; please slow down."}, 429)
+                else:
+                    self._send(queries.create_feedback(
+                        db, data.get("hourly_one_id"), data.get("seen_before"), key), 201)
+            elif path == "/events":
+                key = self._visitor(db)
+                if not ratelimit.allow("events", key):
+                    self._send({"detail": "Too many requests; please slow down."}, 429)
+                else:
+                    self._send(queries.record_event(
+                        db, data.get("hourly_one_id"), data.get("event_type"), key), 202)
             elif path == "/admin/login":
                 if not auth.is_configured():
                     self._send({"detail": "Admin access is not configured "

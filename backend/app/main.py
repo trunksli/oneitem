@@ -8,12 +8,12 @@ routing, request validation, auth, and error mapping only.
 import os
 from typing import Optional
 
-from fastapi import FastAPI, Depends, Header, HTTPException
+from fastapi import FastAPI, Depends, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from . import auth, models, queries
+from . import auth, models, queries, ratelimit, visitors
 from .database import engine, get_db
 from .migrations import ensure_schema
 
@@ -45,6 +45,23 @@ class CommentCreate(BaseModel):
 class FeedbackCreate(BaseModel):
     hourly_one_id: str
     seen_before: str
+
+
+class EventCreate(BaseModel):
+    hourly_one_id: str
+    event_type: str
+
+
+def _visitor(request: Request, db: Session) -> str:
+    """Daily-salted visitor hash; the address is used to compute it and discarded."""
+    ip = visitors.client_ip(request.headers.get("x-forwarded-for"),
+                            request.client.host if request.client else "")
+    return visitors.visitor_key(db, ip, request.headers.get("user-agent"))
+
+
+def _limit(bucket: str, key: str):
+    if not ratelimit.allow(bucket, key):
+        raise HTTPException(status_code=429, detail="Too many requests; please slow down.")
 
 
 class AdminAction(BaseModel):
@@ -130,7 +147,8 @@ def get_comments(limit: int = 50, db: Session = Depends(get_db)):
 
 
 @app.post("/comments", status_code=201)
-def create_comment(comment: CommentCreate, db: Session = Depends(get_db)):
+def create_comment(comment: CommentCreate, request: Request, db: Session = Depends(get_db)):
+    _limit("comments", _visitor(request, db))
     try:
         return queries.create_comment(db, comment.content, comment.display_name)
     except ValueError as e:
@@ -138,9 +156,26 @@ def create_comment(comment: CommentCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/feedback", status_code=201)
-def create_feedback(feedback: FeedbackCreate, db: Session = Depends(get_db)):
+def create_feedback(feedback: FeedbackCreate, request: Request, db: Session = Depends(get_db)):
+    key = _visitor(request, db)
+    _limit("feedback", key)
     try:
-        return queries.create_feedback(db, feedback.hourly_one_id, feedback.seen_before)
+        return queries.create_feedback(db, feedback.hourly_one_id, feedback.seen_before, key)
+    except queries.NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/events", status_code=202)
+def create_event(event: EventCreate, request: Request, db: Session = Depends(get_db)):
+    """Anonymous engagement (view / play / read / share), deduplicated per visitor per day."""
+    key = _visitor(request, db)
+    _limit("events", key)
+    try:
+        return queries.record_event(db, event.hourly_one_id, event.event_type, key)
+    except queries.NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

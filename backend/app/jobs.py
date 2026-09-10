@@ -20,7 +20,7 @@ from . import database, models, slots
 from .ai_scoring import score_candidate
 from .ingestion import ingest_seed_channels
 from .outcomes import check_pick_outcomes
-from .queries import promote_next_pick
+from .queries import promote_next_pick, purge_expired
 from .rss_ingestion import ingest_feeds
 
 PIPELINE_EVERY_HOURS = int(os.getenv("PIPELINE_EVERY_HOURS", "6"))
@@ -102,6 +102,14 @@ def run_cycle():
             check_pick_outcomes(db)
         except Exception:
             print("Outcome check failed:")
+            traceback.print_exc()
+            db.rollback()
+
+        try:
+            purged = purge_expired(db)
+            print("Retention: removed %(comments)d old comments and %(salts)d old salts." % purged)
+        except Exception:
+            print("Retention cleanup failed:")
             traceback.print_exc()
             db.rollback()
     finally:

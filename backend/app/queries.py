@@ -367,20 +367,52 @@ def create_comment(db, content, display_name=None):
     return {"id": comment.id, "content": comment.content, "display_name": comment.display_name}
 
 
-def create_feedback(db, hourly_one_id, seen_before):
-    """Records a Never-Seen / Knew-Already vote against an hourly pick."""
+def create_feedback(db, hourly_one_id, seen_before, visitor_key=None):
+    """Records a New-to-me / Already-knew vote against a pick.
+
+    With a visitor key, a second vote from the same person changes their answer
+    instead of adding another, so the new-to-me rate -- the core incrementality
+    signal -- cannot be inflated by clicking twice or refreshing. The key is a
+    daily-salted hash computed server-side (see visitors.py); nothing identifying
+    is stored.
+    """
     if not hourly_one_id:
         raise ValueError("hourly_one_id is required")
     try:
         seen = models.SeenBefore(seen_before)
     except ValueError:
         raise ValueError("seen_before must be one of %s" % [s.value for s in models.SeenBefore])
+    if db.query(models.HourlyOne.id).filter(models.HourlyOne.id == hourly_one_id).first() is None:
+        raise NotFound("No such pick")
+
+    if visitor_key:
+        link = db.query(models.FeedbackKey).filter(
+            models.FeedbackKey.hourly_one_id == hourly_one_id,
+            models.FeedbackKey.visitor_key == visitor_key).first()
+        if link is not None:
+            existing = db.query(models.Feedback).filter(
+                models.Feedback.id == link.feedback_id).first()
+            if existing is not None:
+                existing.seen_before = seen
+                db.commit()
+                return {"id": existing.id, "seen_before": _plain(existing.seen_before),
+                        "changed": True}
 
     feedback = models.Feedback(hourly_one_id=hourly_one_id, seen_before=seen)
     db.add(feedback)
-    db.commit()
+    db.flush()
+    if visitor_key:
+        db.add(models.FeedbackKey(hourly_one_id=hourly_one_id, visitor_key=visitor_key,
+                                  feedback_id=feedback.id))
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two simultaneous first votes from one visitor: the retry finds the
+        # winner's link and updates it, so this recurses at most once.
+        db.rollback()
+        return create_feedback(db, hourly_one_id, seen_before, visitor_key)
     db.refresh(feedback)
-    return {"id": feedback.id, "seen_before": _plain(feedback.seen_before)}
+    return {"id": feedback.id, "seen_before": _plain(feedback.seen_before), "changed": False}
 
 
 def get_archive(db, limit=100):
@@ -457,10 +489,18 @@ def get_outcomes(db, limit=200):
         else:
             counts["knew_already"] += 1
 
+    events = _event_tallies(db)
+    engaged_by_pick = _engaged_visitors(db)
+
     rows = []
     for hourly in hourlies:
         candidate = candidates.get(hourly.candidate_id)
         counts = tallies.get(hourly.id, {"never_seen": 0, "knew_already": 0})
+        pick_events = events.get(hourly.id, {})
+        views = pick_events.get("view", 0)
+        engaged = engaged_by_pick.get(hourly.id, 0)
+        shares = sum(n for kind, n in pick_events.items()
+                     if kind == "copy_link" or kind.startswith("share_"))
         growth = None
         if hourly.views_at_feature and hourly.views_after_7d:
             growth = round(float(hourly.views_after_7d) / hourly.views_at_feature, 2)
@@ -487,6 +527,10 @@ def get_outcomes(db, limit=200):
             "trustworthiness_score": candidate.trustworthiness_score if candidate else None,
             "never_seen": counts["never_seen"],
             "knew_already": counts["knew_already"],
+            "views": views,
+            "engaged": engaged,
+            "shares": shares,
+            "ctr": round(float(engaged) / views, 2) if views else None,
         })
     return rows
 
@@ -513,7 +557,7 @@ def get_source_stats(db):
                 "source_type": key[1],
                 "candidates": 0, "rejected": 0, "_scores": [],
                 "picks_featured": 0, "never_seen": 0, "knew_already": 0,
-                "_ratios": [], "blowups": 0,
+                "_ratios": [], "blowups": 0, "views": 0, "engaged": 0,
             }
         stats["candidates"] += 1
         if row.status == models.Status.REJECTED:
@@ -528,6 +572,8 @@ def get_source_stats(db):
         stats["picks_featured"] += 1
         stats["never_seen"] += outcome["never_seen"]
         stats["knew_already"] += outcome["knew_already"]
+        stats["views"] += outcome["views"]
+        stats["engaged"] += outcome["engaged"]
         if outcome["growth_ratio"] is not None:
             stats["_ratios"].append(outcome["growth_ratio"])
             if outcome["growth_ratio"] >= 3.0:
@@ -540,11 +586,84 @@ def get_source_stats(db):
         stats["avg_diamond"] = round(sum(scores) / len(scores), 1) if scores else None
         stats["avg_growth_ratio"] = round(sum(ratios) / len(ratios), 2) if ratios else None
         stats["outcomes_checked"] = len(ratios)
+        stats["ctr"] = round(float(stats["engaged"]) / stats["views"], 2) if stats["views"] else None
         total = stats["never_seen"] + stats["knew_already"]
         stats["never_seen_rate"] = round(float(stats["never_seen"]) / total, 2) if total else None
         result.append(stats)
     result.sort(key=lambda s: (s["picks_featured"], s["candidates"]), reverse=True)
     return result
+
+
+# ----------------------------------------------------- engagement & retention
+
+# What the page may report. "Engaged" means the reader actually consumed it.
+EVENT_TYPES = ("view", "play", "read", "open_original", "copy_link",
+               "share_x", "share_bluesky", "share_native")
+ENGAGED_EVENTS = ("play", "read", "open_original")
+
+COMMENT_RETENTION_DAYS = int(os.getenv("COMMENT_RETENTION_DAYS", "30"))
+
+
+def record_event(db, hourly_one_id, event_type, visitor_key):
+    """Anonymous engagement, counted once per visitor, pick and action per day.
+
+    The visitor key is a daily-salted hash computed server-side (visitors.py);
+    nothing identifying is stored, and one day's keys cannot be linked to the next.
+    """
+    if event_type not in EVENT_TYPES:
+        raise ValueError("event_type must be one of %s" % list(EVENT_TYPES))
+    if not hourly_one_id:
+        raise ValueError("hourly_one_id is required")
+    if not visitor_key:
+        raise ValueError("visitor key is required")
+    if db.query(models.HourlyOne.id).filter(models.HourlyOne.id == hourly_one_id).first() is None:
+        raise NotFound("No such pick")
+
+    db.add(models.Event(hourly_one_id=hourly_one_id, event_type=event_type,
+                        visitor_key=visitor_key))
+    try:
+        db.commit()
+        return {"recorded": True}
+    except IntegrityError:
+        db.rollback()  # already counted for this visitor today
+        return {"recorded": False}
+
+
+def _event_tallies(db):
+    """{pick id: {event type: visitors}} -- rows are already unique per visitor."""
+    tallies = {}
+    for pick_id, kind, total in db.query(
+            models.Event.hourly_one_id, models.Event.event_type, func.count(models.Event.id)
+    ).group_by(models.Event.hourly_one_id, models.Event.event_type).all():
+        tallies.setdefault(pick_id, {})[kind] = total
+    return tallies
+
+
+def _engaged_visitors(db):
+    """{pick id: distinct visitors who played, read, or opened the original}.
+
+    Counted as people, not clicks: someone who plays and then opens the original
+    is one engaged reader, so the rate can never exceed 100%.
+    """
+    return {pick_id: total for pick_id, total in db.query(
+        models.Event.hourly_one_id, func.count(func.distinct(models.Event.visitor_key))
+    ).filter(models.Event.event_type.in_(ENGAGED_EVENTS)).group_by(
+        models.Event.hourly_one_id).all()}
+
+
+def purge_expired(db):
+    """Delete what the privacy policy says we do not keep.
+
+    Chat older than COMMENT_RETENTION_DAYS, and visitor salts from earlier days
+    (destroying the salt is what makes old visitor keys unlinkable).
+    """
+    now = datetime.datetime.utcnow()
+    cutoff = now - datetime.timedelta(days=COMMENT_RETENTION_DAYS)
+    comments = db.query(models.Comment).filter(models.Comment.created_at < cutoff).delete()
+    salts = db.query(models.DailySalt).filter(
+        models.DailySalt.day < now.strftime("%Y-%m-%d")).delete()
+    db.commit()
+    return {"comments": comments, "salts": salts}
 
 
 # --------------------------------------------------------------- admin actions

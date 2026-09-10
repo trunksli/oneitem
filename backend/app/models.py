@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import Column, String, Integer, BigInteger, Text, DateTime, Boolean, ForeignKey, Float, Enum
+from sqlalchemy import Column, String, Integer, BigInteger, Text, DateTime, Boolean, ForeignKey, Float, Enum, UniqueConstraint
 # sqlalchemy.orm (not sqlalchemy.ext.declarative) so this works on 1.4 and 2.x alike
 from sqlalchemy.orm import declarative_base
 from datetime import datetime
@@ -110,3 +110,50 @@ class Comment(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     # The comment thread persists across content changes, but we track when it was posted
     # to facilitate the daily midnight/morning clear out.
+
+
+# --- Privacy-preserving measurement -------------------------------------------
+# New tables rather than new columns, so create_all() adds them safely on the
+# live Postgres database with no ALTER TABLE (see app/migrations.py for why that
+# matters). No table here holds an IP address, a cookie ID, or an account.
+
+class DailySalt(Base):
+    """A random salt per UTC day, used to hash visitors (see app/visitors.py).
+
+    Previous days' rows are deleted, which is what makes a visitor key from
+    yesterday impossible to link to today's.
+    """
+    __tablename__ = "daily_salts"
+
+    day = Column(String(10), primary_key=True)  # "2026-09-10"
+    salt = Column(String(64), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class FeedbackKey(Base):
+    """Links one visitor's hashed key to their vote on one pick.
+
+    Lets a second vote change the answer instead of adding another, so the
+    new-to-me rate cannot be inflated by clicking twice or refreshing.
+    """
+    __tablename__ = "feedback_keys"
+    __table_args__ = (UniqueConstraint("hourly_one_id", "visitor_key", name="uq_feedback_visitor"),)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    hourly_one_id = Column(String(36), ForeignKey("hourly_ones.id"), index=True)
+    visitor_key = Column(String(64), nullable=False)
+    feedback_id = Column(String(36), ForeignKey("feedback.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Event(Base):
+    """Anonymous engagement: one row per visitor, pick and action (per day)."""
+    __tablename__ = "events"
+    __table_args__ = (UniqueConstraint("hourly_one_id", "event_type", "visitor_key",
+                                       name="uq_event_visitor"),)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    hourly_one_id = Column(String(36), ForeignKey("hourly_ones.id"), index=True)
+    event_type = Column(String(24), nullable=False)
+    visitor_key = Column(String(64), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

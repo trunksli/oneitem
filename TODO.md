@@ -20,11 +20,11 @@ Done in that pass and not repeated below: `javascript:` URL sanitation, the
       content explicitly and keep treating scores as advisory. **Becomes critical
       before Phase C** (user-submitted links turn this from a curated-source risk
       into an open one).
-- [ ] **Feedback has no identity or de-duplication** — HIGH for data integrity.
+- [x] (done, Phase 3) **Feedback has no identity or de-duplication** — HIGH for data integrity.
       `create_feedback` accepts unlimited votes; `feedbackGiven` is component
       state, so a refresh re-enables voting. The never-seen rate is trivially
       poisonable, including by accident. **[blocks learning]**
-- [ ] **No rate limiting** on `/comments` or `/feedback` — MEDIUM. Trivial to
+- [x] (done, Phase 3) **No rate limiting** on `/comments` or `/feedback` — MEDIUM. Trivial to
       flood the lobby or the metrics.
 - [x] ~~Admin token lives in localStorage forever~~ — replaced by username +
       password sign-in issuing an expiring HMAC session token held in
@@ -43,10 +43,10 @@ Done in that pass and not repeated below: `javascript:` URL sanitation, the
       CalOPPA/CCPA for a public site.
 - [ ] **Terms of Service**, including limitation of liability, disclaimer of
       warranties, acceptable-use rules for the chat, and a DMCA agent — HIGH.
-- [ ] **Switch the embed to `youtube-nocookie.com`** — MEDIUM, one-word change.
+- [x] (done, Phase 1) **Switch the embed to `youtube-nocookie.com`** — MEDIUM, one-word change.
       The current embed sets third-party tracking cookies before any consent,
       which is the exact pattern recent CIPA litigation targets.
-- [ ] **Stop storing full article text** — MEDIUM. `fetch_article_text` retains up
+- [x] (done, Phase 1) **Stop storing full article text** — MEDIUM. `fetch_article_text` retains up
       to 20,000 characters of third-party articles in `transcript`. Store only
       what scoring needs (excerpt plus hash), and honour `robots.txt` with an
       identifying User-Agent.
@@ -73,7 +73,7 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
 - [ ] **A first-time visitor is never told what ONE is** — the biggest design
       flaw. No framing of "one thing per hour, chosen because you would not have
       found it." Needs an about/manifesto surface or first-visit explanation.
-- [ ] **The hour is not felt** — no countdown, no rhythm, no scarcity. The core
+- [x] (done, Phase 2: countdown to the next pick) **The hour is not felt** — no countdown, no rhythm, no scarcity. The core
       mechanic is decorative rather than structural.
 - [x] ~~Articles have no visual treatment~~ — articles now carry the publisher's
       og:image, and anything without one gets a typographic preview card.
@@ -90,11 +90,11 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
 - [x] ~~API failure looks like normal curation~~ — a red banner now names the API
       it tried and how to change it. The underlying empty-state copy is still
       over-cheerful (see Content design).
-- [ ] Feedback is irreversible with no undo and no explanation of what it does.
+- [x] (done, Phase 3: votes are changeable) Feedback is irreversible with no undo and no explanation of what it does.
 
 ## Content design
 
-- [ ] **"Never Seen It" / "I Knew This" are not opposites** — one asks about
+- [x] (done, Phase 1) **"Never Seen It" / "I Knew This" are not opposites** — one asks about
       seeing, the other about knowing, so users answer inconsistently and the core
       metric is noisy. Change to "New to me" / "Already knew this".
       **[blocks learning]**
@@ -104,16 +104,16 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
 
 ## Analytics — non-user data to log
 
-- [ ] **Play/Read click events** — HIGH. We do not currently log whether anyone
+- [x] (done, Phase 3) **Play/Read click events** — HIGH. We do not currently log whether anyone
       consumed the content at all, which is the single most important signal for
       incrementality. **[blocks learning]**
-- [ ] Funnel per pick and per source: impression → play/read → feedback → chat.
+- [x] (done, Phase 3: views, engaged, CTR in admin) Funnel per pick and per source: impression → play/read → feedback → chat.
 - [ ] Return visits by hour-of-day — does anyone actually come back hourly?
 - [ ] Archive engagement: visits, and which entries get opened.
 - [ ] Time from load to first interaction; chat opens vs. messages sent.
 - [ ] Operational: which scheduler made each pick (lazy vs background), the score
       components at decision time (already frozen), and ingestion/scoring failures.
-- [ ] Keep it cookie-less and server-side — it keeps the legal position clean.
+- [x] (done) Keep it cookie-less and server-side — it keeps the legal position clean.
 
 ## Product
 

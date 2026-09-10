@@ -56,6 +56,22 @@ interface SourceStats {
   avg_growth_ratio: number | null;
   outcomes_checked: number;
   blowups: number;
+  views: number;
+  engaged: number;
+  ctr: number | null;
+}
+
+interface RecentPick {
+  hourly_id: string;
+  publish_time: string;
+  title: string | null;
+  creator_name: string | null;
+  views: number;
+  engaged: number;
+  ctr: number | null;
+  never_seen: number;
+  knew_already: number;
+  growth_ratio: number | null;
 }
 
 function num(value: number | null): string {
@@ -85,6 +101,7 @@ export default function Admin() {
   const [queue, setQueue] = useState<QueueCandidate[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [sources, setSources] = useState<SourceStats[]>([]);
+  const [recent, setRecent] = useState<RecentPick[]>([]);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -95,10 +112,11 @@ export default function Admin() {
     // synchronous update there would cascade an extra render.
     try {
       const headers = { "X-Admin-Token": sessionToken };
-      const [queueRes, scheduleRes, sourcesRes] = await Promise.all([
+      const [queueRes, scheduleRes, sourcesRes, outcomesRes] = await Promise.all([
         fetch(`${API_BASE}/admin/queue?limit=25`, { headers }),
         fetch(`${API_BASE}/admin/schedule?count=28`, { headers }),
         fetch(`${API_BASE}/admin/sources`, { headers }),
+        fetch(`${API_BASE}/admin/outcomes`, { headers }),
       ]);
 
       if (queueRes.status === 403) {
@@ -117,6 +135,10 @@ export default function Admin() {
       if (sourcesRes.ok) {
         const s = await sourcesRes.json();
         setSources(Array.isArray(s) ? s : []);
+      }
+      if (outcomesRes.ok) {
+        const o = await outcomesRes.json();
+        setRecent(Array.isArray(o) ? o : []);
       }
       setLoadFailed(false);
       setStatus(`${Array.isArray(queueData) ? queueData.length : 0} candidates awaiting review.`);
@@ -387,6 +409,62 @@ export default function Admin() {
           ))}
         </div>
 
+        {/* Recent picks: did anyone actually consume them? */}
+        {recent.length > 0 && (
+          <section className="mt-16">
+            <h2 className="display text-2xl">Recent picks</h2>
+            <p className="mt-2 mb-5 text-[15px]" style={{ color: 'var(--ink-muted)' }}>
+              Counted once per visitor per day from a hash whose salt is destroyed daily, so
+              these are people, not clicks, and no one is identified. CTR is the share of
+              viewers who played, read, or opened the original.
+            </p>
+            <div className="overflow-x-auto" style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
+              <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr className="label" style={{ color: 'var(--ink-faint)' }}>
+                    <th style={headCell}>Went live</th>
+                    <th style={headCell}>Pick</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Views</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Engaged</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>CTR</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>New to me</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>7d growth</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recent.slice(0, 20).map(r => {
+                    const answered = r.never_seen + r.knew_already;
+                    return (
+                      <tr key={r.hourly_id}>
+                        <td style={{ ...cell, whiteSpace: 'nowrap', color: 'var(--ink-muted)' }}>
+                          {hourLabel(r.publish_time)}
+                        </td>
+                        <td style={{ ...cell, fontWeight: 600 }}>
+                          {r.title || "(removed)"}
+                          {r.creator_name && (
+                            <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> / {r.creator_name}</span>
+                          )}
+                        </td>
+                        <td style={{ ...cell, textAlign: 'right' }}>{r.views}</td>
+                        <td style={{ ...cell, textAlign: 'right' }}>{r.engaged}</td>
+                        <td style={{ ...cell, textAlign: 'right' }}>
+                          {r.ctr != null ? `${Math.round(r.ctr * 100)}%` : "–"}
+                        </td>
+                        <td style={{ ...cell, textAlign: 'right' }}>
+                          {answered ? `${Math.round((r.never_seen / answered) * 100)}% of ${answered}` : "–"}
+                        </td>
+                        <td style={{ ...cell, textAlign: 'right' }}>
+                          {r.growth_ratio != null ? `${r.growth_ratio}x` : "–"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
         {/* Source scoreboard */}
         {sources.length > 0 && (
           <section className="mt-16 mb-16">
@@ -403,6 +481,8 @@ export default function Admin() {
                     <th style={{ ...headCell, textAlign: 'right' }}>Cands</th>
                     <th style={{ ...headCell, textAlign: 'right' }}>Avg Diamond</th>
                     <th style={{ ...headCell, textAlign: 'right' }}>Featured</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>Views</th>
+                    <th style={{ ...headCell, textAlign: 'right' }}>CTR</th>
                     <th style={{ ...headCell, textAlign: 'right' }}>New-to-me</th>
                     <th style={{ ...headCell, textAlign: 'right' }}>Avg 7d</th>
                     <th style={{ ...headCell, textAlign: 'right' }}>Blowups</th>
@@ -415,6 +495,8 @@ export default function Admin() {
                       <td style={{ ...cell, textAlign: 'right' }}>{s.candidates}</td>
                       <td style={{ ...cell, textAlign: 'right' }}>{s.avg_diamond ?? "–"}</td>
                       <td style={{ ...cell, textAlign: 'right' }}>{s.picks_featured}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{s.views}</td>
+                      <td style={{ ...cell, textAlign: 'right' }}>{s.ctr != null ? `${Math.round(s.ctr * 100)}%` : "–"}</td>
                       <td style={{ ...cell, textAlign: 'right' }}>
                         {s.never_seen_rate != null ? `${Math.round(s.never_seen_rate * 100)}%` : "–"}
                       </td>

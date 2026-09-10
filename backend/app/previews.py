@@ -18,6 +18,11 @@ BOILERPLATE_PATTERNS = [
     r'\bclick here\b', r'\bread later\b', r'\bsave article\b', r'\bcomments?\b',
     r'\bcookie', r'\baccept all\b', r'\bsign in\b', r'\bshare this\b',
     r'\badvertisement\b', r'\ball rights reserved\b', r'\bskip to content\b',
+    # Sponsor reads that avoid the obvious words
+    r'\bsupport (the|this|my) channel\b', r'\bjoin this channel\b', r'\bmembership\b',
+    r'\blinks? (below|in the description)\b', r'\bin the description\b', r'\buse my link\b',
+    r'\bat the link\b', r'\baffiliate\b', r'\bdonat(e|ion)', r'\bsquarespace\b',
+    r'\bnordvpn\b', r'\bskillshare\b', r'\bhellofresh\b', r'\bsee your impact\b',
 ]
 
 _BOILERPLATE = re.compile("|".join(BOILERPLATE_PATTERNS), re.IGNORECASE)

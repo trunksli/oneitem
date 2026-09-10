@@ -38,6 +38,19 @@ def write_gist(candidate):
     return gist if gist and is_usable(gist) else None
 
 
+def from_description(candidate):
+    """A video preview lifted from its description rather than written from the content.
+
+    Descriptions open with the sponsor read, and sponsor copy does not always use
+    words a filter can catch -- so these are never trusted, only rewritten.
+    """
+    if candidate.source_type != models.SourceType.YOUTUBE:
+        return False
+    preview = (candidate.preview_text or "").rstrip(". …")
+    description = " ".join((candidate.description or "").split())
+    return bool(preview) and description.startswith(" ".join(preview.split())[:80])
+
+
 def backfill(db, limit=None, use_llm=True):
     candidates = db.query(models.ContentCandidate).all()
     # Rewrite previews that are missing OR that are sponsor reads / nav chrome:
@@ -45,6 +58,7 @@ def backfill(db, limit=None, use_llm=True):
     needs_work = [
         c for c in candidates
         if not (c.thumbnail_url or "").strip() or not is_usable(c.preview_text)
+        or from_description(c)
     ]
     if limit:
         needs_work = needs_work[:limit]
@@ -59,12 +73,9 @@ def backfill(db, limit=None, use_llm=True):
             if not (candidate.thumbnail_url or "").strip() and candidate.source_id:
                 candidate.thumbnail_url = youtube_thumbnail(candidate.source_id)
                 fixed_images += 1
-            if not is_usable(candidate.preview_text):
+            if not is_usable(candidate.preview_text) or from_description(candidate):
                 # A video description is mostly sponsor copy, so go straight to the model
                 gist = write_gist(candidate) if use_llm else None
-                if not gist:
-                    gist = first_sentences(candidate.description or "")
-                    gist = gist if is_usable(gist) else None
                 if gist:
                     candidate.preview_text = gist
                     fixed_previews += 1

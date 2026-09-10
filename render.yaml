@@ -49,6 +49,15 @@ services:
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: ./out
+    # Share links live on the site's own domain but are rendered by the API, so
+    # link previews carry each pick's own title and card image.
+    routes:
+      - type: rewrite
+        source: /p/*
+        destination: https://one-api-lcrh.onrender.com/p/*
+      - type: rewrite
+        source: /og/*
+        destination: https://one-api-lcrh.onrender.com/og/*
     envVars:
       # Baked in at BUILD time, so changing it requires a redeploy.
       # Set to the API service's URL, e.g. https://one-api.onrender.com

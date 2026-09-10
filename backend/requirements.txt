@@ -17,3 +17,7 @@ psycopg2-binary>=2.9.9
 # needs tzdata where the OS does not ship it; pytz is the fallback for older Pythons.
 tzdata>=2024.1
 pytz>=2023.3
+
+# Link-preview cards (app/share.py). 10.1+ ships a scalable default font,
+# the fallback when the host has no serif fonts installed.
+Pillow>=10.1

@@ -128,11 +128,11 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
 
 ## Marketing
 
-- [ ] **Open Graph / Twitter metadata** — HIGH. Absent from `layout.tsx`, so every
+- [x] (done, Phase 5: site-wide tags, per-pick share pages and cards) **Open Graph / Twitter metadata** — HIGH. Absent from `layout.tsx`, so every
       shared link is a bare URL. Permalinks now exist, which makes this the last
       blocker on sharing. Note: per-item preview images need server rendering,
       which the static export cannot do (see below).
-- [ ] **Replace the default Next.js favicon** — untouched since the scaffold.
+- [x] (done, Phase 5) **Replace the default Next.js favicon** — untouched since the scaffold.
 - [ ] Decide the name (see the naming exploration; "ONE" is unsearchable and
       undomainable).
 - [ ] Positioning: lead with obscurity, not the mechanic — "the internet already
@@ -143,7 +143,7 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
 
 ## Architecture
 
-- [ ] **Per-item OG images require server rendering.** The frontend is a static
+- [x] (solved without moving off static hosting: the API renders /p/<id> and /og/<id>.png, and the site rewrites to it) **Per-item OG images require server rendering.** The frontend is a static
       export, so metadata cannot vary per pick. Moving the frontend to a Node
       service on Render would unlock real link previews — weigh against the cost
       and the simplicity of static hosting.

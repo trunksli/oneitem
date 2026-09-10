@@ -10,10 +10,11 @@ from typing import Optional
 
 from fastapi import FastAPI, Depends, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from . import auth, models, queries, ratelimit, visitors
+from . import auth, models, queries, ratelimit, share, visitors
 from .database import engine, get_db
 from .migrations import ensure_schema
 
@@ -139,6 +140,29 @@ def get_pick(hourly_id: str, db: Session = Depends(get_db)):
         return queries.get_pick(db, hourly_id)
     except queries.NotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/p/{hourly_id}", response_class=HTMLResponse)
+def share_page(hourly_id: str, db: Session = Depends(get_db)):
+    """Share link: this pick's Open Graph tags for link previews, then on to the pick."""
+    try:
+        return HTMLResponse(share.share_page(db, hourly_id),
+                            headers={"Cache-Control": "public, max-age=300"})
+    except queries.NotFound:
+        raise HTTPException(status_code=404, detail="No such pick")
+
+
+@app.get("/og/{hourly_id}.png")
+def og_card(hourly_id: str, db: Session = Depends(get_db)):
+    """1200x630 link-preview card for one pick."""
+    try:
+        png = share.render_card(db, hourly_id)
+    except queries.NotFound:
+        raise HTTPException(status_code=404, detail="No such pick")
+    except share.CardUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/comments")

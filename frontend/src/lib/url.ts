@@ -12,10 +12,22 @@ export function safeExternalUrl(url: string | null | undefined): string | undefi
   return undefined;
 }
 
-/** The shareable URL for a featured hour. */
+/**
+ * The shareable URL for a pick: /p/<id> on this site. The static host rewrites
+ * it to the API, which serves the pick's own link-preview tags and card; if the
+ * rewrite is not configured, the 404 page forwards people to the pick instead.
+ */
 export function permalinkFor(hourlyId: string): string {
-  if (typeof window === "undefined") return `/?pick=${hourlyId}`;
-  return `${window.location.origin}/?pick=${hourlyId}`;
+  if (typeof window === "undefined") return `/p/${hourlyId}`;
+  return `${window.location.origin}/p/${hourlyId}`;
+}
+
+export function xShareUrl(text: string, url: string): string {
+  return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
+}
+
+export function blueskyShareUrl(text: string, url: string): string {
+  return `https://bsky.app/intent/compose?text=${encodeURIComponent(`${text} ${url}`)}`;
 }
 
 /** The pick id requested by the current URL, if any. */

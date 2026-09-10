@@ -22,7 +22,7 @@ from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
 load_dotenv()
 
-from app import auth, database, models, queries, ratelimit, visitors
+from app import auth, database, models, queries, ratelimit, share, visitors
 from app.migrations import ensure_schema
 
 MAX_BODY_BYTES = 16 * 1024
@@ -37,6 +37,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_raw(self, body, content_type, status=200, cache=None):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        if cache:
+            self.send_header("Cache-Control", cache)
         self.end_headers()
         self.wfile.write(body)
 
@@ -92,6 +102,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(queries.get_hourly(db))
             elif path == "/comments":
                 self._send(queries.get_comments(db, as_int("limit", 50)))
+            elif path.startswith("/p/"):
+                self._send_raw(share.share_page(db, path[3:].strip("/")).encode("utf-8"),
+                               "text/html; charset=utf-8", cache="public, max-age=300")
+            elif path.startswith("/og/") and path.endswith(".png"):
+                try:
+                    png = share.render_card(db, path[4:-4])
+                except share.CardUnavailable as e:
+                    self._send({"detail": str(e)}, 503)
+                else:
+                    self._send_raw(png, "image/png", cache="public, max-age=86400")
             elif path.startswith("/pick/"):
                 self._send(queries.get_pick(db, path[len("/pick/"):]))
             elif path == "/archive":

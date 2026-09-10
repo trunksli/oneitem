@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { MessageSquare, X, Send, Play, BookOpen, Link2, Check } from 'lucide-react';
 import { API_BASE } from '@/lib/api';
@@ -8,7 +8,7 @@ import ApiWarning from '@/components/api-warning';
 import Thumbnail from '@/components/thumbnail';
 import Countdown from '@/components/countdown';
 import { usePersistentState } from '@/lib/use-persistent-state';
-import { safeExternalUrl, permalinkFor } from '@/lib/url';
+import { safeExternalUrl, permalinkFor, xShareUrl, blueskyShareUrl } from '@/lib/url';
 import { usePickParam } from '@/lib/use-pick-param';
 import { track } from '@/lib/events';
 
@@ -35,6 +35,8 @@ interface HourlyResponse {
   next_publish_time?: string;
 }
 
+const noopSubscribe = () => () => {};
+
 interface Comment {
   id: string;
   content: string;
@@ -57,6 +59,12 @@ export default function Home() {
 
   // A ?pick=<id> URL pins the page to one archived hour instead of "now".
   const pinnedId = usePickParam();
+  // The device's own share sheet, where the browser offers one (mostly mobile).
+  const canNativeShare = useSyncExternalStore(
+    noopSubscribe,
+    () => typeof navigator !== "undefined" && typeof navigator.share === "function",
+    () => false,
+  );
   const chatPanelRef = useRef<HTMLDivElement>(null);
   const chatToggleRef = useRef<HTMLButtonElement>(null);
 
@@ -221,6 +229,28 @@ export default function Home() {
     }
   };
 
+  const shareText = candidate ? `${candidate.title} — via ONE` : "ONE";
+
+  const openShare = (kind: "share_x" | "share_bluesky") => {
+    const id = hourlyOne?.hourly?.id;
+    if (!id) return;
+    track(id, kind);
+    const url = permalinkFor(id);
+    const target = kind === "share_x" ? xShareUrl(shareText, url) : blueskyShareUrl(shareText, url);
+    window.open(target, "_blank", "noopener,noreferrer");
+  };
+
+  const nativeShare = async () => {
+    const id = hourlyOne?.hourly?.id;
+    if (!id) return;
+    try {
+      await navigator.share({ title: candidate?.title || "ONE", text: shareText, url: permalinkFor(id) });
+      track(id, "share_native");
+    } catch {
+      // Dismissing the share sheet rejects the promise; that is not an error.
+    }
+  };
+
   return (
     <main className="min-h-screen" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
       <ApiWarning failed={loadFailed} />
@@ -380,14 +410,41 @@ export default function Home() {
               autoplay, so a direct link keeps playback from being a dead end. */}
           <div className="mt-2 flex items-center justify-between gap-4">
             {hourlyOne?.hourly?.id ? (
-              <button
-                onClick={handleShare}
-                className="label flex items-center gap-2 link-accent"
-                style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                {copied ? <Check size={14} /> : <Link2 size={14} />}
-                {copied ? "Link copied" : "Copy link"}
-              </button>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <button
+                  onClick={handleShare}
+                  className="label flex items-center gap-2 link-accent"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  {copied ? <Check size={14} /> : <Link2 size={14} />}
+                  {copied ? "Link copied" : "Copy link"}
+                </button>
+                <button
+                  onClick={() => openShare("share_x")}
+                  className="label link-accent"
+                  aria-label="Share on X"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  X
+                </button>
+                <button
+                  onClick={() => openShare("share_bluesky")}
+                  className="label link-accent"
+                  aria-label="Share on Bluesky"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  Bluesky
+                </button>
+                {canNativeShare && (
+                  <button
+                    onClick={nativeShare}
+                    className="label link-accent"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                  >
+                    Share&hellip;
+                  </button>
+                )}
+              </div>
             ) : <span />}
             {sourceUrl && (
               <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="label link-accent"

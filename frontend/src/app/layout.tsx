@@ -11,11 +11,31 @@ const splineSans = Spline_Sans({
   weight: ["400", "500", "600", "700"],
 });
 
+const SITE_TITLE = "ONE — one good thing, four times a day";
+const SITE_DESCRIPTION =
+  "The internet is saturated with endless feeds. ONE surfaces exactly one exceptional " +
+  "piece of content four times a day, chosen for the things you would never have found on your own.";
+
 export const metadata: Metadata = {
-  title: "ONE — one good thing, four times a day",
-  description:
-    "The internet is saturated with endless feeds. ONE surfaces exactly one exceptional " +
-    "piece of content four times a day, chosen for the things you would never have found on your own.",
+  // Absolute base for the preview image and canonical URLs below.
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://one-web-bwjk.onrender.com"),
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    type: "website",
+    siteName: "ONE",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: "/",
+    images: [{ url: "/og-default.png", width: 1200, height: 630,
+               alt: "ONE — one good thing, four times a day" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: ["/og-default.png"],
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

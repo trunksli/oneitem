@@ -89,6 +89,34 @@ promotes the top pick. Give it a few minutes, then reload.
 Watch the API service's logs to follow the ingestion and scoring, and check
 `/admin/` (with your `ADMIN_TOKEN`) to see the review queue fill up.
 
+## 5. Share links
+
+Link previews (X, Bluesky, Slack, iMessage) need each pick's own tags and image,
+which a static site cannot serve. The API renders them at `/p/<id>` and
+`/og/<id>.png`; two rewrite rules on the static site make those paths live on
+the site's own domain.
+
+On **`one-web-bwjk`** go to **Redirects/Rewrites** and add, in this order:
+
+| Source | Destination | Action |
+| --- | --- | --- |
+| `/p/*` | `https://one-api-lcrh.onrender.com/p/*` | Rewrite |
+| `/og/*` | `https://one-api-lcrh.onrender.com/og/*` | Rewrite |
+
+(`render.yaml` declares the same rules for Blueprint deploys.) Until they exist,
+share links still work for people: the site's 404 page recognises `/p/<id>` and
+forwards to the pick. Only the rich preview is missing.
+
+To check a share link the way a crawler sees it:
+
+```bash
+curl.exe -s https://one-web-bwjk.onrender.com/p/<pick-id> | findstr og:
+```
+
+Card titles use the host's serif font when there is one and Pillow's built-in
+font otherwise. For a consistent look, add an OFL-licensed `serif.ttf` and
+`sans.ttf` under `backend/app/assets/fonts/`.
+
 ---
 
 ## Things that will bite you

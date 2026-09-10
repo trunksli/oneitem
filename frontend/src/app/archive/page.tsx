@@ -69,7 +69,7 @@ export default function Archive() {
         <p className="label" style={{ color: 'var(--ink-faint)' }}>The Archive</p>
         <h1 className="display mt-3 text-3xl md:text-4xl leading-tight">Past Diamonds</h1>
         <p className="mt-2 text-[15px]" style={{ color: 'var(--ink-muted)' }}>
-          Every hour we have featured, newest first.
+          Every pick we have featured, newest first.
         </p>
 
         <div className="mt-10 flex flex-col">
@@ -77,7 +77,7 @@ export default function Archive() {
             <p className="label" style={{ color: 'var(--ink-faint)' }}>Loading</p>
           ) : entries.length === 0 ? (
             <p className="text-[15px]" style={{ color: 'var(--ink-muted)' }}>
-              Nothing has been featured yet. Check back after the first hour.
+              Nothing has been featured yet. Check back after the next pick.
             </p>
           ) : (
             entries.map(entry => (

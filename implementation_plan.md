@@ -1,4 +1,4 @@
-# ONE: The Internet's Hourly Diamond - Architecture & Roadmap
+# ONE: The Internet's Diamond, Four Times a Day - Architecture & Roadmap
 
 This document serves as the master blueprint for **ONE**. It captures the core product philosophy, the current state of the MVP, and the roadmap for future phases so that any developer or AI assistant can easily understand the context and pick up where development left off.
 
@@ -7,7 +7,7 @@ This document serves as the master blueprint for **ONE**. It captures the core p
 The internet is saturated with endless feeds. The philosophy of ONE is:
 > **"You don't need another feed. You need one good thing."**
 
-ONE presents exactly **one piece of exceptional content per hour**. The goal is not to maximize endless scrolling, but to find something genuinely worth the user's time (a "Diamond"), especially focusing on emerging trends before they go viral.
+ONE presents exactly **one piece of exceptional content at a time, four times a day** (6am, 12pm, 6pm and midnight US Eastern, set in `backend/app/slots.py`; it launched hourly). The goal is not to maximize endless scrolling, but to find something genuinely worth the user's time (a "Diamond"), especially focusing on emerging trends before they go viral.
 
 ---
 

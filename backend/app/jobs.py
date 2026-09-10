@@ -1,5 +1,5 @@
 """
-Shared background work: refresh candidates, schedule the hour, check outcomes.
+Shared background work: refresh candidates, fill the current slot, check outcomes.
 
 Used two ways:
   - run_hourly.py             -> a dedicated worker process (local, or a paid
@@ -16,7 +16,7 @@ import traceback
 
 from sqlalchemy import func
 
-from . import database, models
+from . import database, models, slots
 from .ai_scoring import score_candidate
 from .ingestion import ingest_seed_channels
 from .outcomes import check_pick_outcomes
@@ -67,14 +67,14 @@ def schedule_top_candidate(db):
     """
     hourly = promote_next_pick(db)
     if hourly is None:
-        print("Nothing to schedule: the hour is filled or no candidates are pending review.")
+        print("Nothing to schedule: the slot is filled or no candidates are pending review.")
     else:
         print("Promoted candidate %s to HourlyOne for %s." % (hourly.candidate_id, hourly.publish_time))
     return hourly
 
 
 def run_cycle():
-    """One full pass: refresh if stale, schedule the hour, record outcomes.
+    """One full pass: refresh if stale, fill the current slot, record outcomes.
 
     Each step is isolated so one failure (e.g. an expired API key) doesn't stop
     the others -- the site keeps rotating content even if ingestion is broken.
@@ -108,12 +108,6 @@ def run_cycle():
         db.close()
 
 
-def seconds_until_next_hour():
-    now = datetime.datetime.utcnow()
-    next_hour = now.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(hours=1)
-    return max(60, (next_hour - now).total_seconds() + 5)
-
-
 def scheduler_loop():
     print("ONE scheduler running (pipeline every %dh)." % PIPELINE_EVERY_HOURS)
     while True:
@@ -122,8 +116,8 @@ def scheduler_loop():
         except Exception:
             print("Scheduler cycle failed:")
             traceback.print_exc()
-        delay = seconds_until_next_hour()
-        print("Sleeping %ds until the next hour..." % int(delay))
+        delay = slots.seconds_until_next_slot()
+        print("Sleeping %ds until the next publishing slot..." % int(delay))
         time.sleep(delay)
 
 

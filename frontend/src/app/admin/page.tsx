@@ -32,7 +32,7 @@ interface QueueCandidate {
 
 interface Slot {
   publish_time: string;
-  is_current_hour: boolean;
+  is_current_slot: boolean;
   hourly_id: string | null;
   theme: string | null;
   candidate_id: string | null;
@@ -65,7 +65,7 @@ function num(value: number | null): string {
 function hourLabel(iso: string): string {
   const date = new Date(iso.replace(" ", "T").split(".")[0] + "Z");
   if (isNaN(date.getTime())) return iso;
-  return date.toLocaleString('en-US', { weekday: 'short', hour: 'numeric' });
+  return date.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric' });
 }
 
 const SESSION_KEY = "one_admin_session";
@@ -97,7 +97,7 @@ export default function Admin() {
       const headers = { "X-Admin-Token": sessionToken };
       const [queueRes, scheduleRes, sourcesRes] = await Promise.all([
         fetch(`${API_BASE}/admin/queue?limit=25`, { headers }),
-        fetch(`${API_BASE}/admin/schedule?hours=24`, { headers }),
+        fetch(`${API_BASE}/admin/schedule?count=28`, { headers }),
         fetch(`${API_BASE}/admin/sources`, { headers }),
       ]);
 
@@ -247,7 +247,7 @@ export default function Admin() {
 
       <div className="mx-auto px-6 md:px-10 py-10" style={{ maxWidth: 1100 }}>
         <p className="label" style={{ color: 'var(--ink-faint)' }}>Curation</p>
-        <h1 className="display mt-3 text-3xl md:text-4xl">The next 24 hours</h1>
+        <h1 className="display mt-3 text-3xl md:text-4xl">The next 7 days</h1>
         <p className="mt-2 text-[15px]" style={{ color: 'var(--ink-muted)' }}>{status}</p>
 
         {/* Runway */}
@@ -256,7 +256,7 @@ export default function Admin() {
             <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
               <thead>
                 <tr className="label" style={{ color: 'var(--ink-faint)' }}>
-                  <th style={headCell}>Hour</th>
+                  <th style={headCell}>Slot</th>
                   <th style={headCell}>Scheduled</th>
                   <th style={headCell}>Theme</th>
                   <th style={{ ...headCell, textAlign: 'right' }}>Score</th>
@@ -266,10 +266,10 @@ export default function Admin() {
               <tbody>
                 {slots.map(slot => (
                   <tr key={slot.publish_time}
-                      style={slot.is_current_hour ? { background: 'var(--accent-wash)' } : undefined}>
+                      style={slot.is_current_slot ? { background: 'var(--accent-wash)' } : undefined}>
                     <td style={{ ...cell, whiteSpace: 'nowrap' }}>
                       {hourLabel(slot.publish_time)}
-                      {slot.is_current_hour && (
+                      {slot.is_current_slot && (
                         <span className="label ml-2" style={{ color: 'var(--accent)' }}>live</span>
                       )}
                     </td>
@@ -283,7 +283,7 @@ export default function Admin() {
                     <td style={{ ...cell, color: 'var(--ink-muted)' }}>{slot.theme || "–"}</td>
                     <td style={{ ...cell, textAlign: 'right' }}>{num(slot.diamond_score)}</td>
                     <td style={{ ...cell, textAlign: 'right' }}>
-                      {slot.hourly_id && !slot.is_current_hour && (
+                      {slot.hourly_id && !slot.is_current_slot && (
                         <button
                           onClick={() => post("unschedule", { hourly_id: slot.hourly_id }, "Slot cleared.")}
                           disabled={busy}
@@ -304,7 +304,7 @@ export default function Admin() {
         {/* Queue */}
         <h2 className="display text-2xl mt-16">Review queue</h2>
         <p className="mt-2 mb-5 text-[15px]" style={{ color: 'var(--ink-muted)' }}>
-          Ranked by Diamond Score. Assign one to an upcoming hour, or reject it.
+          Ranked by Diamond Score. Assign one to an upcoming slot, or reject it.
         </p>
 
         <div className="flex flex-col gap-4">
@@ -356,8 +356,8 @@ export default function Admin() {
                     style={{ background: 'var(--paper)', color: 'var(--ink)',
                              border: '1px solid var(--line-strong)', borderRadius: 'var(--radius-sm)' }}
                   >
-                    <option value="">Now (this hour)</option>
-                    {openSlots.filter(s => !s.is_current_hour).map(s => (
+                    <option value="">Now (current slot)</option>
+                    {openSlots.filter(s => !s.is_current_slot).map(s => (
                       <option key={s.publish_time} value={s.publish_time}>{hourLabel(s.publish_time)}</option>
                     ))}
                   </select>

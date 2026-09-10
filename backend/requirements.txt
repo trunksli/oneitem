@@ -12,3 +12,8 @@ youtube-transcript-api>=0.6.2
 
 # Postgres driver (unused when DATABASE_URL is unset and SQLite is the fallback)
 psycopg2-binary>=2.9.9
+
+# Timezone data for the ET-anchored publishing slots (app/slots.py). zoneinfo
+# needs tzdata where the OS does not ship it; pytz is the fallback for older Pythons.
+tzdata>=2024.1
+pytz>=2023.3

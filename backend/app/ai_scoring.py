@@ -106,7 +106,7 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     tone_list = ", ".join(TONES)
     prompt = f"""
     You are an expert content curator for a service called ONE. 
-    Our goal is to find exactly one exceptional piece of content per hour. We are looking for "diamonds in the rough" - highly interesting, trustworthy, non-clickbait content by obsessive experts.
+    Our goal is to find one exceptional piece of content at a time, four times a day. We are looking for "diamonds in the rough" - highly interesting, trustworthy, non-clickbait content by obsessive experts.
     
     Evaluate the following {content_kind} candidate.
 

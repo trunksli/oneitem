@@ -68,6 +68,8 @@ Set on **`one-api`**:
 | `ADMIN_TOKEN` | *Optional.* A bearer token for scripts; not needed to sign in |
 | `ALLOWED_ORIGINS` | The frontend URL, e.g. `https://one-web.onrender.com` |
 | `RUN_SCHEDULER` | `1` |
+| `SLOT_TIMEZONE` | *Optional.* Defaults to `America/New_York` |
+| `SLOT_HOURS` | *Optional.* Local hours a new pick goes live; defaults to `0,6,12,18` |
 
 Set on **`one-web`**:
 

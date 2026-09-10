@@ -11,10 +11,10 @@ const splineSans = Spline_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "ONE — one good thing, every hour",
+  title: "ONE — one good thing, four times a day",
   description:
     "The internet is saturated with endless feeds. ONE surfaces exactly one exceptional " +
-    "piece of content per hour, chosen for the things you would never have found on your own.",
+    "piece of content four times a day, chosen for the things you would never have found on your own.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -17,13 +17,14 @@ import tempfile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app import models, queries
+from app import models, queries, slots
 
 failures = []
 
 
-def hour_now():
-    return datetime.datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+def slot_now():
+    """Start of the current publishing slot."""
+    return slots.slot_start()
 
 
 def check(label, condition, detail=""):
@@ -36,7 +37,7 @@ def check(label, condition, detail=""):
 
 def seed(db):
     now = datetime.datetime.utcnow()
-    hour_start = now.replace(minute=0, second=0, microsecond=0)
+    hour_start = slots.slot_start(now)  # the current publishing slot
 
     featured = models.ContentCandidate(
         id="cand-featured", url="https://youtube.com/watch?v=aaa", source_id="aaa",
@@ -222,14 +223,14 @@ def main():
         check("not configured without a username", auth.is_configured() is False)
         os.environ["ADMIN_USERNAME"] = "michael"
 
-        print("\n24-hour schedule runway")
-        slots = queries.get_schedule(db, 24)
-        check("returns 24 slots", len(slots) == 24, str(len(slots)))
-        check("first slot is the current hour", slots[0]["is_current_hour"] is True)
-        check("current hour shows its pick", slots[0]["title"] is not None)
-        check("later slots start empty", slots[5]["hourly_id"] is None)
+        print("\nschedule runway")
+        runway = queries.get_schedule(db, 24)
+        check("returns 24 slots", len(runway) == 24, str(len(runway)))
+        check("first slot is the current hour", runway[0]["is_current_slot"] is True)
+        check("current hour shows its pick", runway[0]["title"] is not None)
+        check("later slots start empty", runway[5]["hourly_id"] is None)
 
-        future_hour = slots[3]["publish_time"]
+        future_hour = runway[3]["publish_time"]
         queries.feature_candidate(db, "cand-queued", future_hour)
         refreshed = queries.get_schedule(db, 24)
         check("candidate lands in the chosen future hour",
@@ -284,7 +285,7 @@ def main():
             diamond_score=99.0, ai_explanation="Trust me.",
         )
         db.add(evil)
-        db.add(models.HourlyOne(id="hourly-evil", publish_time=hour_now() - datetime.timedelta(days=1),
+        db.add(models.HourlyOne(id="hourly-evil", publish_time=slot_now() - datetime.timedelta(days=1),
                                 theme="Curious", candidate_id="cand-evil"))
         db.commit()
 
@@ -334,7 +335,7 @@ def main():
               db.query(models.ContentCandidate).get("cand-featured").status == models.Status.PUBLISHED)
         check("snapshots views at feature",
               db.query(models.HourlyOne).filter(
-                  models.HourlyOne.publish_time == hour_now()).first().views_at_feature == 1000)
+                  models.HourlyOne.publish_time == slot_now()).first().views_at_feature == 1000)
 
         # A second read must not create a duplicate for the same hour.
         before = db.query(models.HourlyOne).count()
@@ -343,14 +344,14 @@ def main():
               db.query(models.HourlyOne).count() == before, str(db.query(models.HourlyOne).count()))
 
         # With nothing left to promote it must fall back rather than raise.
-        db.query(models.HourlyOne).filter(models.HourlyOne.publish_time == hour_now()).delete()
+        db.query(models.HourlyOne).filter(models.HourlyOne.publish_time == slot_now()).delete()
         db.query(models.ContentCandidate).update({models.ContentCandidate.status: models.Status.REJECTED})
         db.commit()
         fallback = queries.get_hourly(db)
         check("falls back to the latest pick when nothing is pending", fallback["is_stale"] is True)
 
         os.environ["LAZY_SCHEDULING"] = "0"
-        db.query(models.HourlyOne).filter(models.HourlyOne.publish_time == hour_now()).delete()
+        db.query(models.HourlyOne).filter(models.HourlyOne.publish_time == slot_now()).delete()
         db.commit()
         disabled = queries.get_hourly(db)
         check("respects LAZY_SCHEDULING=0", disabled["is_stale"] is True)
@@ -361,7 +362,7 @@ def main():
         check("reports config block", "database" in st["config"])
         check("reports candidates by status", isinstance(st["content"]["candidates_by_status"], dict))
         check("reports ready_to_feature", isinstance(st["content"]["ready_to_feature"], int))
-        check("reports schedule block", "current_hour_filled" in st["schedule"])
+        check("reports schedule block", "current_slot_filled" in st["schedule"])
         check("leaks no secrets", "DATABASE_URL" not in json.dumps(st)
               and "GEMINI_API_KEY" not in json.dumps(st))
         check("flags lazy scheduling state",
@@ -372,6 +373,40 @@ def main():
         db.expire_all()
         check("marks rejected",
               db.query(models.ContentCandidate).get("cand-featured").status == models.Status.REJECTED)
+        print("")
+        print("publishing slots")
+        check("default runway covers seven days",
+              len(queries.get_schedule(db)) == slots.SLOTS_PER_DAY * 7,
+              str(len(queries.get_schedule(db))))
+        check("runway slots are in order",
+              all(b["publish_time"] > a["publish_time"] for a, b in zip(runway, runway[1:])))
+        live = queries.get_hourly(db)
+        check("hourly reports when the next pick lands",
+              live.get("next_publish_time", "") > live["hourly"]["publish_time"],
+              str(live.get("next_publish_time")))
+
+        # A pick left over from the hourly era, sitting inside the current slot,
+        # must count as that slot's pick rather than being duplicated.
+        begins = slot_now()
+        legacy_time = begins + (datetime.datetime.utcnow() - begins) / 2
+        db.query(models.HourlyOne).filter(models.HourlyOne.publish_time >= begins).delete()
+        db.add(models.ContentCandidate(
+            id="cand-legacy", url="https://example.com/legacy", source_id="legacy",
+            source_type=models.SourceType.RSS, title="Legacy", theme="Curious",
+            status=models.Status.PUBLISHED, diamond_score=50.0))
+        db.add(models.ContentCandidate(
+            id="cand-waiting", url="https://example.com/waiting", source_id="waiting",
+            source_type=models.SourceType.RSS, title="Waiting", theme="Space",
+            status=models.Status.PENDING_REVIEW, diamond_score=90.0))
+        db.add(models.HourlyOne(id="hourly-legacy", publish_time=legacy_time,
+                                theme="Curious", candidate_id="cand-legacy"))
+        db.commit()
+        check("an off-boundary pick already fills its slot", queries.promote_next_pick(db) is None)
+        in_slot = db.query(models.HourlyOne).filter(
+            models.HourlyOne.publish_time >= begins,
+            models.HourlyOne.publish_time < slots.next_slot_start(begins)).count()
+        check("no duplicate pick in the slot", in_slot == 1, str(in_slot))
+
         for missing in ("feature_candidate", "reject_candidate"):
             try:
                 getattr(queries, missing)(db, "does-not-exist")

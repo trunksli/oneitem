@@ -6,6 +6,7 @@ import { MessageSquare, X, Send, Play, BookOpen, Link2, Check } from 'lucide-rea
 import { API_BASE } from '@/lib/api';
 import ApiWarning from '@/components/api-warning';
 import Thumbnail from '@/components/thumbnail';
+import Countdown from '@/components/countdown';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { safeExternalUrl, permalinkFor } from '@/lib/url';
 import { usePickParam } from '@/lib/use-pick-param';
@@ -30,6 +31,7 @@ interface HourlyResponse {
   candidate?: Candidate;
   is_stale?: boolean;
   is_permalink?: boolean;
+  next_publish_time?: string;
 }
 
 interface Comment {
@@ -84,6 +86,9 @@ export default function Home() {
       .then(data => setComments(Array.isArray(data) ? data : []))
       .catch(err => console.error(err));
   }, []);
+
+  // Stable, so the countdown's effect fires once when the slot turns over.
+  const refreshLive = useCallback(() => fetchHourly(), [fetchHourly]);
 
   useEffect(() => {
     fetchHourly(pinnedId);
@@ -202,12 +207,18 @@ export default function Home() {
       >
         <div className="flex flex-col">
           <span className="display text-2xl font-bold tracking-tight leading-none">ONE</span>
-          <span className="label mt-1" style={{ color: 'var(--accent)' }}>{theme} Hour</span>
+          <span className="label mt-1" style={{ color: 'var(--accent)' }}>{theme}</span>
         </div>
         <div className="flex items-center gap-5">
-          <span className="label hidden sm:block" style={{ color: 'var(--ink-faint)' }}>
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-          </span>
+          {hourlyOne?.next_publish_time && (
+            <span className="label" style={{ color: 'var(--ink-faint)' }}>
+              <span className="hidden sm:inline">Next pick in </span>
+              <Countdown
+                target={hourlyOne.next_publish_time}
+                onElapsed={pinnedId ? undefined : refreshLive}
+              />
+            </span>
+          )}
           <Link href="/archive" className="label link-accent">Archive</Link>
           <button
             ref={chatToggleRef}
@@ -233,14 +244,14 @@ export default function Home() {
                   { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric' })}`
               : ""}
           </p>
-          <Link href="/" className="label link-accent">Go to this hour&apos;s pick &#8594;</Link>
+          <Link href="/" className="label link-accent">Go to the current pick &#8594;</Link>
         </div>
       )}
 
       <div className="mx-auto px-6 md:px-10 py-10 md:py-16" style={{ maxWidth: 'var(--content-max)' }}>
 
         <p className="label" style={{ color: 'var(--ink-faint)' }}>
-          {pinnedId ? "A Past Diamond" : isStale ? "Last Hour's Pick" : "Current Feature"}
+          {pinnedId ? "A Past Diamond" : isStale ? "The Latest Pick" : "Current Feature"}
         </p>
 
         <h1 className="display mt-3 text-3xl md:text-5xl font-normal leading-tight">

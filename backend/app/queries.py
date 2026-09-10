@@ -13,7 +13,7 @@ import os
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
-from . import models
+from . import models, slots
 from .themes import DEFAULT_THEME, normalize_theme
 
 MAX_COMMENT_LENGTH = 500
@@ -72,25 +72,27 @@ def _candidate_summary(candidate):
 # ---------------------------------------------------------------- public reads
 
 def promote_next_pick(db):
-    """Fill the current hour's slot with the best pending candidate.
+    """Fill the current publishing slot with the best pending candidate.
 
     Pure database work -- candidates are already ingested and scored, so this makes
     no network calls and is cheap enough to run inside a request (see get_hourly).
-    Returns the new HourlyOne, or None if the hour is already filled or nothing is
+    Returns the new HourlyOne, or None if the slot is already filled or nothing is
     waiting for review.
     """
     now = datetime.datetime.utcnow()
-    current_hour = now.replace(minute=0, second=0, microsecond=0)
+    current_slot = slots.slot_start(now)
+    following_slot = slots.next_slot_start(now)
 
     existing = db.query(models.HourlyOne).filter(
-        models.HourlyOne.publish_time == current_hour).first()
+        models.HourlyOne.publish_time >= current_slot,
+        models.HourlyOne.publish_time < following_slot).first()
     if existing is not None:
         return None
 
     # Theme rotation: prefer a top candidate whose theme differs from the previous
-    # hour's, so the same theme does not run back-to-back all day.
+    # pick's, so the same theme does not run back-to-back all day.
     previous = db.query(models.HourlyOne).filter(
-        models.HourlyOne.publish_time < current_hour
+        models.HourlyOne.publish_time < current_slot
     ).order_by(models.HourlyOne.publish_time.desc()).first()
 
     pending = db.query(models.ContentCandidate).filter(
@@ -111,7 +113,7 @@ def promote_next_pick(db):
         return None
 
     hourly = models.HourlyOne(
-        publish_time=current_hour,
+        publish_time=current_slot,
         theme=top_candidate.theme or DEFAULT_THEME,
         candidate_id=top_candidate.id,
         editorial_explanation=top_candidate.ai_explanation,
@@ -124,26 +126,26 @@ def promote_next_pick(db):
 
 
 def get_hourly(db):
-    """The current hour's pick, falling back to the latest so the site is never blank."""
+    """The current slot's pick, falling back to the latest so the site is never blank."""
     now = datetime.datetime.utcnow()
-    hour_start = now.replace(minute=0, second=0, microsecond=0)
+    slot_begins = slots.slot_start(now)
 
     def current_pick():
         return db.query(models.HourlyOne).filter(
-            models.HourlyOne.publish_time >= hour_start,
+            models.HourlyOne.publish_time >= slot_begins,
             models.HourlyOne.publish_time <= datetime.datetime.utcnow(),
         ).order_by(models.HourlyOne.publish_time.desc()).first()
 
     hourly = current_pick()
 
-    # Lazy scheduling: fill this hour on demand rather than relying on a background
+    # Lazy scheduling: fill this slot on demand rather than relying on a background
     # thread having survived. Free/sleepy hosts kill the process between requests,
-    # so the loop in jobs.py rarely lives long enough to reach the next hour.
+    # so the loop in jobs.py rarely lives long enough to reach the next slot.
     if hourly is None and os.getenv("LAZY_SCHEDULING", "1") != "0":
         try:
             promote_next_pick(db)
         except IntegrityError:
-            # Another request won the race for this hour; publish_time is unique.
+            # Another request won the race for this slot; publish_time is unique.
             db.rollback()
         except Exception:
             db.rollback()
@@ -175,11 +177,12 @@ def get_hourly(db):
         },
         "candidate": payload or None,
         "is_stale": is_stale,
+        "next_publish_time": _plain(slots.next_slot_start(now)),
     }
 
 
 def get_pick(db, hourly_id):
-    """One specific featured hour, addressed by id -- the permalink target.
+    """One specific featured pick, addressed by id -- the permalink target.
 
     Same payload shape as get_hourly so the page can render either without
     branching, plus is_permalink so it can show the "back to now" affordance.
@@ -207,6 +210,7 @@ def get_pick(db, hourly_id):
         "candidate": payload or None,
         "is_stale": False,
         "is_permalink": True,
+        "next_publish_time": _plain(slots.next_slot_start()),
     }
 
 
@@ -217,7 +221,7 @@ def get_status(db):
     the database are configured, never their values.
     """
     now = datetime.datetime.utcnow()
-    current_hour = now.replace(minute=0, second=0, microsecond=0)
+    current_slot = slots.slot_start(now)
     pipeline_every = int(os.getenv("PIPELINE_EVERY_HOURS", "6"))
 
     # Every database section is individually guarded. The whole point of this
@@ -253,8 +257,8 @@ def get_status(db):
         else (now - latest_discovered).total_seconds() >= pipeline_every * 3600
     )
 
-    this_hour = attempt("current_hour", lambda: db.query(models.HourlyOne).filter(
-        models.HourlyOne.publish_time == current_hour).first())
+    this_hour = attempt("current_slot", lambda: db.query(models.HourlyOne).filter(
+        models.HourlyOne.publish_time == current_slot).first())
     latest = attempt("latest_hour", lambda: db.query(models.HourlyOne).order_by(
         models.HourlyOne.publish_time.desc()).first())
     latest_candidate = None
@@ -278,7 +282,10 @@ def get_status(db):
     return {
         "status": "degraded" if (errors or missing_columns) else "ok",
         "utc_now": _plain(now),
-        "current_hour": _plain(current_hour),
+        "current_slot": _plain(current_slot),
+        "next_slot": _plain(slots.next_slot_start(now)),
+        "slot_timezone": slots.SLOT_TIMEZONE,
+        "slot_hours_local": slots.SLOT_HOURS,
 
         "schema": {
             "ok": not missing_columns,
@@ -311,7 +318,7 @@ def get_status(db):
         "schedule": {
             "hours_published": attempt("hours_published", lambda: db.query(
                 func.count(models.HourlyOne.id)).scalar()) or 0,
-            "current_hour_filled": this_hour is not None,
+            "current_slot_filled": this_hour is not None,
             "latest_publish_time": _plain(latest.publish_time) if latest else None,
             "latest_title": latest_candidate.title if latest_candidate else None,
             "outcomes_pending_check": attempt("outcomes_pending", lambda: db.query(
@@ -542,31 +549,33 @@ def get_source_stats(db):
 
 # --------------------------------------------------------------- admin actions
 
-def get_schedule(db, hours=24):
-    """The next `hours` hourly slots, filled or empty.
+def get_schedule(db, count=None):
+    """The next `count` publishing slots, filled or empty (default: seven days).
 
     The curation runway: lets an editor see what is queued to go live before it
     does, rather than finding out afterwards.
     """
-    now = datetime.datetime.utcnow()
-    start = now.replace(minute=0, second=0, microsecond=0)
-    end = start + datetime.timedelta(hours=max(1, min(hours, 72)))
+    per_day = max(1, slots.SLOTS_PER_DAY)
+    count = per_day * 7 if count is None else max(1, min(int(count), per_day * 14))
+    times = slots.upcoming_slots(count)
+    end = slots.next_slot_start(times[-1])
 
     scheduled = db.query(models.HourlyOne).filter(
-        models.HourlyOne.publish_time >= start,
+        models.HourlyOne.publish_time >= times[0],
         models.HourlyOne.publish_time < end,
     ).all()
-    by_hour = {h.publish_time: h for h in scheduled}
+    # Keyed by the slot each pick falls in, so a pick from the hourly era that
+    # sits off a slot boundary still shows up in the right row.
+    by_slot = {slots.slot_start(h.publish_time): h for h in scheduled}
     candidates = _candidates_by_id(db, scheduled)
 
-    slots = []
-    for offset in range(max(1, min(hours, 72))):
-        slot_time = start + datetime.timedelta(hours=offset)
-        hourly = by_hour.get(slot_time)
+    runway = []
+    for index, slot_time in enumerate(times):
+        hourly = by_slot.get(slot_time)
         candidate = candidates.get(hourly.candidate_id) if hourly is not None else None
-        slots.append({
+        runway.append({
             "publish_time": _plain(slot_time),
-            "is_current_hour": offset == 0,
+            "is_current_slot": index == 0,
             "hourly_id": hourly.id if hourly is not None else None,
             "theme": _plain(hourly.theme) if hourly is not None else None,
             "candidate_id": hourly.candidate_id if hourly is not None else None,
@@ -576,7 +585,7 @@ def get_schedule(db, hours=24):
             "source_type": _plain(candidate.source_type) if candidate is not None else None,
             "diamond_score": candidate.diamond_score if candidate is not None else None,
         })
-    return slots
+    return runway
 
 
 def unschedule(db, hourly_id):
@@ -589,9 +598,9 @@ def unschedule(db, hourly_id):
     if hourly is None:
         raise NotFound("No such scheduled hour")
 
-    current_hour = datetime.datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-    if hourly.publish_time < current_hour:
-        raise ValueError("That hour has already been published")
+    current_slot = slots.slot_start()
+    if hourly.publish_time < current_slot:
+        raise ValueError("That slot has already been published")
 
     candidate = db.query(models.ContentCandidate).filter(
         models.ContentCandidate.id == hourly.candidate_id).first()
@@ -613,9 +622,9 @@ def feature_candidate(db, candidate_id, publish_time=None):
     if candidate is None:
         raise NotFound("Candidate not found")
 
-    current_hour = datetime.datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    current_slot = slots.slot_start()
     if publish_time is None:
-        hour_start = current_hour
+        slot_begins = current_slot
     else:
         if isinstance(publish_time, str):
             try:
@@ -625,11 +634,13 @@ def feature_candidate(db, candidate_id, publish_time=None):
                 raise ValueError("publish_time must be ISO format, e.g. 2026-09-08T14:00:00")
         else:
             parsed = publish_time
-        hour_start = parsed.replace(minute=0, second=0, microsecond=0)
-        if hour_start < current_hour:
-            raise ValueError("Cannot schedule into a past hour")
+        slot_begins = slots.slot_start(parsed)
+        if slot_begins < current_slot:
+            raise ValueError("Cannot schedule into a past slot")
     hourly = db.query(models.HourlyOne).filter(
-        models.HourlyOne.publish_time == hour_start).first()
+        models.HourlyOne.publish_time >= slot_begins,
+        models.HourlyOne.publish_time < slots.next_slot_start(slot_begins),
+    ).order_by(models.HourlyOne.publish_time.desc()).first()
 
     if hourly is not None:
         displaced = db.query(models.ContentCandidate).filter(
@@ -644,7 +655,7 @@ def feature_candidate(db, candidate_id, publish_time=None):
         hourly.outcome_checked_at = None
     else:
         hourly = models.HourlyOne(
-            publish_time=hour_start,
+            publish_time=slot_begins,
             theme=candidate.theme or DEFAULT_THEME,
             candidate_id=candidate.id,
             editorial_explanation=candidate.ai_explanation,
@@ -657,7 +668,7 @@ def feature_candidate(db, candidate_id, publish_time=None):
     return {
         "hourly_id": hourly.id,
         "candidate_id": candidate.id,
-        "publish_time": _plain(hour_start),
+        "publish_time": _plain(slot_begins),
     }
 
 

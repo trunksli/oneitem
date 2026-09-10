@@ -166,9 +166,9 @@ def admin_sources(db: Session = Depends(get_db)):
 
 
 @app.get("/admin/schedule", dependencies=[Depends(require_admin)])
-def admin_get_schedule(hours: int = 24, db: Session = Depends(get_db)):
-    """The upcoming curation runway."""
-    return queries.get_schedule(db, hours)
+def admin_get_schedule(count: Optional[int] = None, db: Session = Depends(get_db)):
+    """The upcoming curation runway: publishing slots, seven days by default."""
+    return queries.get_schedule(db, count)
 
 
 @app.post("/admin/schedule", status_code=201, dependencies=[Depends(require_admin)])

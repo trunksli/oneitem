@@ -100,7 +100,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif path == "/admin/sources":
                     self._send(queries.get_source_stats(db))
                 elif path == "/admin/schedule":
-                    self._send(queries.get_schedule(db, as_int("hours", 24)))
+                    self._send(queries.get_schedule(db, as_int("count", None)))
                 else:
                     self._send({"detail": "Not found"}, 404)
             else:

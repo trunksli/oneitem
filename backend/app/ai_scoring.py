@@ -151,9 +151,18 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     # Get scores from AI
     scores = call_llm(prompt)
     
+    from . import runlog
     if not scores:
         print("Failed to get scores for", candidate.id)
+        runlog.record(last_score_problem="empty model response")
         return False
+    if not isinstance(scores, dict):
+        # e.g. the model wrapped its answer in a list
+        if isinstance(scores, list) and scores and isinstance(scores[0], dict):
+            scores = scores[0]
+        else:
+            runlog.record(last_score_problem="model returned %s, not an object" % type(scores).__name__)
+            return False
 
     def clamp_score(key):
         """Coerce an LLM-provided score to a float in [0, 100]; None if absent/invalid."""
@@ -170,6 +179,8 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     # candidate PENDING_AI so a later run can retry instead of ranking it at 0.
     if quality is None or interestingness is None:
         print("LLM response missing core scores for", candidate.id, "- leaving as PENDING_AI.")
+        runlog.record(last_score_problem="missing core scores; response keys: %s"
+                      % ", ".join(sorted(str(k) for k in scores))[:300])
         return False
 
     # Map AI scores to the candidate model

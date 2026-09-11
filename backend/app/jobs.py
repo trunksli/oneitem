@@ -87,9 +87,10 @@ def score_pending(db, limit=None):
                 scored += 1
             else:
                 failed += 1
-        except Exception:
+        except Exception as e:
             failed += 1
             traceback.print_exc()
+            runlog.record(last_score_problem="%s: %s" % (type(e).__name__, str(e)[:250]))
             db.rollback()
         runlog.record(scored=scored, score_failures=failed)
     return scored, failed

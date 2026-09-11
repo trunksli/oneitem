@@ -36,7 +36,7 @@ def get_video_transcript(video_id: str) -> str:
         print(f"Could not fetch transcript for {video_id}: {e}")
         return ""
 
-def call_llm(prompt: str) -> dict:
+def call_llm(prompt: str, _retry: bool = True) -> dict:
     """Calls the Gemini API directly using requests (compatible with Python 3.6)."""
     # Read at call time (not import time) so it works regardless of when load_dotenv() ran.
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -82,6 +82,10 @@ def call_llm(prompt: str) -> dict:
         text_response = data['candidates'][0]['content']['parts'][0]['text']
         return json.loads(text_response)
     except Exception as e:
+        # The model occasionally returns malformed JSON; one fresh try usually fixes it.
+        if _retry and isinstance(e, ValueError):
+            print(f"LLM returned malformed JSON ({e}); retrying once.")
+            return call_llm(prompt, _retry=False)
         print(f"LLM API call failed: {e}")
         detail = ""
         if 'response' in locals() and hasattr(response, 'text'):

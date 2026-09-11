@@ -91,8 +91,20 @@ def _relax_theme_columns(engine, is_postgres):
     for table in ("content_candidates", "hourly_ones"):
         if table not in tables:
             continue
-        current = _columns(engine, table).get("theme", "")
-        if "CHAR" in current or "TEXT" in current:
+        # Ask the catalog, not SQLAlchemy's type name: SQLAlchemy describes a
+        # native enum as VARCHAR(n), so an earlier check for "CHAR" in that name
+        # decided the column was already text and never converted it. The enum
+        # then rejected every new theme ("Film & TV"), so no scored candidate
+        # could be saved and the site stopped getting new picks.
+        try:
+            with engine.connect() as conn:
+                data_type = conn.execute(text(
+                    "SELECT data_type FROM information_schema.columns "
+                    "WHERE table_name = :t AND column_name = 'theme'"), {"t": table}).scalar()
+        except Exception as e:
+            print("migration: could not read %s.theme type (%s)" % (table, e))
+            continue
+        if data_type != "USER-DEFINED":
             continue  # already plain text
         _run(engine,
              "ALTER TABLE %s ALTER COLUMN theme TYPE VARCHAR(40) USING theme::text" % table,

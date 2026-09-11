@@ -16,7 +16,7 @@ import traceback
 
 from sqlalchemy import func
 
-from . import database, models, slots, sources
+from . import database, models, runlog, slots, sources
 from .ai_scoring import score_candidate
 from .ingestion import ingest_seed_channels
 from .outcomes import check_pick_outcomes
@@ -73,8 +73,35 @@ def pipeline_is_due(db):
     return (datetime.datetime.utcnow() - latest).total_seconds() >= PIPELINE_EVERY_HOURS * 3600
 
 
-def refresh_candidates(db):
-    """Ingest from all sources, then score a capped, mixed batch of what is pending."""
+def score_pending(db, limit=None):
+    """Score a capped, mixed batch of whatever is waiting. Returns (scored, failed)."""
+    pending = db.query(models.ContentCandidate).filter(
+        models.ContentCandidate.status == models.Status.PENDING_AI
+    ).all()
+    batch = select_for_scoring(pending, limit or MAX_SCORING_PER_RUN)
+    print("Scoring %d of %d pending candidates..." % (len(batch), len(pending)))
+    scored = failed = 0
+    for candidate in batch:
+        try:
+            if score_candidate(db, candidate):
+                scored += 1
+            else:
+                failed += 1
+        except Exception:
+            failed += 1
+            traceback.print_exc()
+            db.rollback()
+        runlog.record(scored=scored, score_failures=failed)
+    return scored, failed
+
+
+def ready_count(db):
+    return db.query(func.count(models.ContentCandidate.id)).filter(
+        models.ContentCandidate.status == models.Status.PENDING_REVIEW).scalar() or 0
+
+
+def ingest_all(db):
+    """Fetch new candidates from every source."""
     if os.getenv("YOUTUBE_API_KEY"):
         ingest_seed_channels(db, SEED_CHANNELS)
     else:
@@ -88,13 +115,11 @@ def refresh_candidates(db):
             traceback.print_exc()
             db.rollback()
 
-    pending = db.query(models.ContentCandidate).filter(
-        models.ContentCandidate.status == models.Status.PENDING_AI
-    ).all()
-    batch = select_for_scoring(pending, MAX_SCORING_PER_RUN)
-    print("Scoring %d of %d pending candidates..." % (len(batch), len(pending)))
-    for candidate in batch:
-        score_candidate(db, candidate)
+
+def refresh_candidates(db):
+    """Ingest from all sources, then score a capped, mixed batch of what is pending."""
+    ingest_all(db)
+    score_pending(db)
 
 
 def schedule_top_candidate(db):
@@ -118,15 +143,33 @@ def run_cycle():
     the others -- the site keeps rotating content even if ingestion is broken.
     """
     db = database.SessionLocal()
+    runlog.start()
     try:
+        # Scoring is not tied to ingestion. It used to run only straight after an
+        # ingest, and ingestion is skipped for 6 hours after it last added
+        # anything -- so if the free host slept between the two, the new items
+        # were never scored, the ready pool ran dry, and the site froze on its
+        # last pick. Now anything waiting is scored every cycle, and when nothing
+        # is ready it is scored FIRST, before a slow ingest can be interrupted.
+        try:
+            if ready_count(db) == 0:
+                score_pending(db)
+        except Exception:
+            print("Scoring failed:")
+            traceback.print_exc()
+            db.rollback()
+
         try:
             if pipeline_is_due(db):
-                refresh_candidates(db)
+                ingest_all(db)
+                runlog.record(ingested=datetime.datetime.utcnow().isoformat())
             else:
                 print("Candidate pool is fresh; skipping ingestion.")
-        except Exception:
+            score_pending(db)
+        except Exception as e:
             print("Candidate refresh failed:")
             traceback.print_exc()
+            runlog.record(error="%s: %s" % (type(e).__name__, str(e)[:200]))
             db.rollback()
 
         try:
@@ -151,6 +194,7 @@ def run_cycle():
             traceback.print_exc()
             db.rollback()
     finally:
+        runlog.finish()
         db.close()
 
 

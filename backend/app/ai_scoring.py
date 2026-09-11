@@ -81,8 +81,15 @@ def call_llm(prompt: str) -> dict:
         return json.loads(text_response)
     except Exception as e:
         print(f"LLM API call failed: {e}")
+        detail = ""
         if 'response' in locals() and hasattr(response, 'text'):
-             print(response.text)
+            print(response.text)
+            detail = response.text
+        # Surfaced on /status: a failing model call otherwise looks exactly like
+        # "nothing to score", and the site silently stops getting new picks.
+        from . import runlog
+        runlog.record(last_llm_error="%s %s" % (str(e)[:200].replace(GEMINI_API_KEY, "***"),
+                                               detail[:300].replace(GEMINI_API_KEY, "***")))
         return {}
 
 def score_candidate(db: Session, candidate: models.ContentCandidate):

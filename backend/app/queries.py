@@ -13,7 +13,7 @@ import os
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
-from . import models, slots
+from . import models, runlog, slots
 from .themes import DEFAULT_THEME, normalize_theme
 
 MAX_COMMENT_LENGTH = 500
@@ -56,6 +56,11 @@ def _plain(value):
     if value_attr is not None and hasattr(value, "name"):
         return value_attr
     return value
+
+
+def _theme(value):
+    """A theme as displayed. Old rows can still hold enum names like "BIOSCIENCE"."""
+    return normalize_theme(_plain(value)) if value else None
 
 
 def _candidate_summary(candidate):
@@ -192,7 +197,7 @@ def get_hourly(db):
         "hourly": {
             "id": hourly.id,
             "publish_time": _plain(hourly.publish_time),
-            "theme": _plain(hourly.theme),
+            "theme": _theme(hourly.theme),
             "editorial_explanation": hourly.editorial_explanation,
         },
         "candidate": payload or None,
@@ -224,7 +229,7 @@ def get_pick(db, hourly_id):
         "hourly": {
             "id": hourly.id,
             "publish_time": _plain(hourly.publish_time),
-            "theme": _plain(hourly.theme),
+            "theme": _theme(hourly.theme),
             "editorial_explanation": hourly.editorial_explanation,
         },
         "candidate": payload or None,
@@ -346,6 +351,12 @@ def get_status(db):
                 models.HourlyOne.outcome_checked_at.is_(None)).scalar()) or 0,
         },
 
+        # What the background pipeline did since this process started. "scored: 0"
+        # with a last_llm_error means the model call is failing; started: null
+        # means the scheduler never ran a cycle in this process.
+        "pipeline": dict(runlog.snapshot(),
+                         gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash")),
+
         "engagement": {
             "comments_total": attempt("comments_total", lambda: db.query(
                 func.count(models.Comment.id)).scalar()) or 0,
@@ -448,7 +459,7 @@ def get_archive(db, limit=100):
         row = {
             "hourly_id": hourly.id,
             "publish_time": _plain(hourly.publish_time),
-            "theme": _plain(hourly.theme),
+            "theme": _theme(hourly.theme),
             "editorial_explanation": hourly.editorial_explanation,
             "candidate_id": hourly.candidate_id,
             "title": None, "creator_name": None, "creator_url": None,
@@ -477,7 +488,7 @@ def get_queue(db, limit=10):
     ).order_by(models.ContentCandidate.diamond_score.desc()).limit(max(1, min(limit, 50))).all()
     return [{
         "id": c.id, "title": c.title, "creator_name": c.creator_name, "url": _safe_url(c.url),
-        "source_type": _plain(c.source_type), "theme": _plain(c.theme), "tone": c.tone,
+        "source_type": _plain(c.source_type), "theme": _theme(c.theme), "tone": c.tone,
         "preview_text": c.preview_text, "thumbnail_url": _safe_url(c.thumbnail_url),
         "view_count": c.view_count, "subscriber_count": c.subscriber_count,
         "upload_date": _plain(c.upload_date),
@@ -527,7 +538,7 @@ def get_outcomes(db, limit=200):
         rows.append({
             "hourly_id": hourly.id,
             "publish_time": _plain(hourly.publish_time),
-            "theme": _plain(hourly.theme),
+            "theme": _theme(hourly.theme),
             "views_at_feature": hourly.views_at_feature,
             "views_after_7d": hourly.views_after_7d,
             "outcome_checked_at": _plain(hourly.outcome_checked_at),
@@ -716,7 +727,7 @@ def get_schedule(db, count=None):
             "publish_time": _plain(slot_time),
             "is_current_slot": index == 0,
             "hourly_id": hourly.id if hourly is not None else None,
-            "theme": _plain(hourly.theme) if hourly is not None else None,
+            "theme": _theme(hourly.theme) if hourly is not None else None,
             "candidate_id": hourly.candidate_id if hourly is not None else None,
             "title": candidate.title if candidate is not None else None,
             "creator_name": candidate.creator_name if candidate is not None else None,

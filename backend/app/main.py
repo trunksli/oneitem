@@ -165,13 +165,23 @@ def og_card(hourly_id: str, db: Session = Depends(get_db)):
                     headers={"Cache-Control": "public, max-age=86400"})
 
 
+# The chat is off while the picks themselves are being proved out. The table, the
+# retention purge and the query layer all stay, so CHAT_ENABLED=1 brings it back
+# with no migration and no loss of what was posted.
+CHAT_ENABLED = os.getenv("CHAT_ENABLED") == "1"
+
+
 @app.get("/comments")
 def get_comments(limit: int = 50, db: Session = Depends(get_db)):
+    if not CHAT_ENABLED:
+        raise HTTPException(status_code=404, detail="Chat is not available.")
     return queries.get_comments(db, limit)
 
 
 @app.post("/comments", status_code=201)
 def create_comment(comment: CommentCreate, request: Request, db: Session = Depends(get_db)):
+    if not CHAT_ENABLED:
+        raise HTTPException(status_code=404, detail="Chat is not available.")
     _limit("comments", _visitor(request, db))
     try:
         return queries.create_comment(db, comment.content, comment.display_name)

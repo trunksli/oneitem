@@ -5,8 +5,11 @@ severity noted per item. Items marked **[blocks learning]** gate the product's
 central question — whether ONE causes consumption that would not otherwise happen
 (see [implementation_plan.md](implementation_plan.md)).
 
-Done in that pass and not repeated below: `javascript:` URL sanitation, the
-`inert` chat panel, and per-item permalinks.
+Done in that pass and not repeated below: `javascript:` URL sanitation and
+per-item permalinks.
+
+**The chat is switched off** (Phase 7) while the picks are being proved out, so
+chat items below are parked rather than open. `CHAT_ENABLED=1` brings it back.
 
 ---
 
@@ -50,8 +53,9 @@ Done in that pass and not repeated below: `javascript:` URL sanitation, the
       to 20,000 characters of third-party articles in `transcript`. Store only
       what scoring needs (excerpt plus hash), and honour `robots.txt` with an
       identifying User-Agent.
-- [ ] (partly: email reporting and 30-day deletion; no in-product tool yet) **Moderation and takedown path for chat** — MEDIUM. Section 230 covers the
-      host, but there is currently no way to report or delete a comment.
+- [~] (parked, Phase 7: chat is off) **Moderation and takedown path for chat** — MEDIUM. Section 230 covers the
+      host, but there is no way to report or delete a comment. Must be resolved
+      before the chat is turned back on.
 - [x] (addressed in Terms as 13+; see LEGAL-REVIEW.md) Age gate / COPPA consideration: free-text and display name are collected
       from anyone.
 - [x] (done, Phase 4: site footer + Terms) Disclose that editorial summaries are AI-generated.
@@ -61,12 +65,11 @@ Done in that pass and not repeated below: `javascript:` URL sanitation, the
 - [x] ~~Thumbnail has no text alternative~~ — now a real `<img>` with `alt` via
       `components/thumbnail.tsx`, which also falls back when an image 404s.
 - [ ] Add a skip-to-content link.
-- [ ] Full focus trap inside the open chat panel (Escape and focus return are
-      done; tab cycling is not).
+- [~] (parked, Phase 7: chat is off) Full focus trap inside the open chat panel.
 - [ ] Audit the admin tables for screen-reader semantics (`scope`, captions).
 
 Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion`,
-`lang="en"`, iframe title, and the now-`inert` chat panel.
+`lang="en"`, and the iframe title.
 
 ## Design
 
@@ -84,9 +87,9 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
 
 - [ ] **No way back from the player** — once the iframe replaces the thumbnail
       there is no return to the description for that hour.
-- [ ] **Chat has no per-item context** — a single daily lobby means comments about
-      three picks ago land under the current one. Consider per-pick threads with a
-      persistent daily room alongside.
+- [~] (parked, Phase 7: chat is off) **Chat has no per-item context** — a single daily lobby meant comments about
+      three picks ago landed under the current one. If it returns, consider
+      per-pick threads with a persistent daily room alongside.
 - [x] ~~API failure looks like normal curation~~ — a red banner now names the API
       it tried and how to change it. The underlying empty-state copy is still
       over-cheerful (see Content design).
@@ -107,10 +110,10 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
 - [x] (done, Phase 3) **Play/Read click events** — HIGH. We do not currently log whether anyone
       consumed the content at all, which is the single most important signal for
       incrementality. **[blocks learning]**
-- [x] (done, Phase 3: views, engaged, CTR in admin) Funnel per pick and per source: impression → play/read → feedback → chat.
+- [x] (done, Phase 3: views, engaged, CTR in admin) Funnel per pick and per source: impression → play/read → feedback.
 - [ ] Return visits by hour-of-day — does anyone actually come back hourly?
 - [ ] Archive engagement: visits, and which entries get opened.
-- [ ] Time from load to first interaction; chat opens vs. messages sent.
+- [ ] Time from load to first interaction.
 - [ ] Operational: which scheduler made each pick (lazy vs background), the score
       components at decision time (already frozen), and ingestion/scoring failures.
 - [x] (done) Keep it cookie-less and server-side — it keeps the legal position clean.

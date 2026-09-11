@@ -101,7 +101,11 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/hourly":
                 self._send(queries.get_hourly(db))
             elif path == "/comments":
-                self._send(queries.get_comments(db, as_int("limit", 50)))
+                # Chat is off unless CHAT_ENABLED=1; see app/main.py
+                if os.getenv("CHAT_ENABLED") != "1":
+                    self._send({"detail": "Chat is not available."}, 404)
+                else:
+                    self._send(queries.get_comments(db, as_int("limit", 50)))
             elif path.startswith("/p/"):
                 self._send_raw(share.share_page(db, path[3:].strip("/")).encode("utf-8"),
                                "text/html; charset=utf-8", cache="public, max-age=300")
@@ -149,7 +153,9 @@ class Handler(BaseHTTPRequestHandler):
         db = database.SessionLocal()
         try:
             if path == "/comments":
-                if not ratelimit.allow("comments", self._visitor(db)):
+                if os.getenv("CHAT_ENABLED") != "1":
+                    self._send({"detail": "Chat is not available."}, 404)
+                elif not ratelimit.allow("comments", self._visitor(db)):
                     self._send({"detail": "Too many requests; please slow down."}, 429)
                 else:
                     self._send(queries.create_comment(

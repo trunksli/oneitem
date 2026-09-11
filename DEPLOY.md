@@ -161,9 +161,12 @@ brand-new interpreter), pin the runtime: add `PYTHON_VERSION` = `3.12.8` to the
 API service's environment variables and redeploy. `requirements.txt` uses
 minimum-version floors, so it otherwise installs whatever is current.
 
-**The chat is unmoderated and public.** Posting is rate-limited per visitor, but
-there is no spam filtering or delete tooling yet. Worth knowing before sharing
-the link widely.
+**The chat is switched off.** `/comments` returns 404 and the panel is gone from
+the site, while the picks themselves are being proved out. The table, the
+retention purge and the query layer are untouched, so setting `CHAT_ENABLED=1` on
+the API brings it back -- but restore the chat wording in the Privacy Policy and
+Terms (`frontend/src/lib/legal.ts`) in the same change, and remember it is
+unmoderated: rate-limited per visitor, with no spam filtering or delete tooling.
 
 **Sources live in `backend/app/sources.py`.** 34 YouTube channels, 25 article
 feeds, Vimeo Staff Picks and 12 podcasts. Each run adds at most 3 new items per

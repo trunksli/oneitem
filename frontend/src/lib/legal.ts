@@ -6,17 +6,17 @@
  * the plain-language approach, and the standard clauses -- warranties,
  * liability, indemnity, governing law, severability -- carry over. Everything
  * describing what the service DOES has been rewritten, because the products
- * handle data very differently: Verse stores nothing, while ONE keeps a public
- * chat, anonymous votes and anonymous engagement counts.
+ * handle data very differently: Verse stores nothing, while ONE keeps anonymous
+ * votes and anonymous engagement counts.
  *
  * NOT LEGAL ADVICE. Drafted by the engineering side for review by counsel before
  * launch; see LEGAL-REVIEW.md at the repo root for what the reviewer is asked to
  * check. Statements of fact about the system are listed here, and each must be
  * re-checked whenever the code it describes changes:
  *
- *   - Chat: stored with an optional display name, shown for the UTC day, and
- *     deleted after 30 days (backend/app/queries.py purge_expired,
- *     COMMENT_RETENTION_DAYS).
+ *   - Chat: OFF. Nothing can be posted and /comments returns 404 unless
+ *     CHAT_ENABLED=1 (backend/app/main.py). These documents must not describe a
+ *     chat while that is true -- restore the wording from git if it returns.
  *   - Votes and engagement: keyed by a daily-salted hash of network address and
  *     browser type (backend/app/visitors.py). The address is never stored; each
  *     earlier day's salt is deleted.
@@ -30,7 +30,7 @@
 
 export const SITE_NAME = "ONE";
 
-export const LAST_UPDATED = "10 September 2026";
+export const LAST_UPDATED = "11 September 2026";
 
 /**
  * Shared with Balmody until ONE has its own name and address -- confirmed by the
@@ -120,28 +120,12 @@ export const TERMS: LegalSection[] = [
     ],
   },
   {
-    heading: "The chat",
-    body: [
-      "The Daily Lobby is public. Anything you post there, and the display name you " +
-        "choose, can be read by anyone visiting the site.",
-      "Please do not post anything unlawful, harassing, hateful, or sexually explicit; " +
-        "anything that shares another person's private information; spam or " +
-        "advertising; or anything you do not have the right to share.",
-      "You keep ownership of what you write. By posting it, you let us display it on " +
-        "ONE for as long as we keep it. Messages are shown for the day they are posted " +
-        "and are deleted after 30 days. We may remove any message, at any time, for " +
-        "any reason.",
-      `To report a message, write to ${CONTACT_EMAIL} with its text and roughly when ` +
-        "it was posted.",
-    ],
-  },
-  {
     heading: "Acceptable use",
     body: [
-      "Please use the service as intended. Do not attempt to overload it, to vote or " +
-        "post through automated means, to interfere with how picks are counted, or to " +
+      "Please use the service as intended. Do not attempt to overload it, to vote " +
+        "through automated means, to interfere with how picks are counted, or to " +
         "access it in ways designed to get around its limits.",
-      "We limit how often any one visitor can post, vote or send activity, to keep the " +
+      "We limit how often any one visitor can vote or send activity, to keep the " +
         "service usable and the counts honest.",
     ],
   },
@@ -195,8 +179,8 @@ export const TERMS: LegalSection[] = [
     heading: "Indemnity",
     body: [
       "If someone brings a claim against us because of how you used the service — for " +
-        "example by posting something in the chat that these terms prohibit, or in breach " +
-        "of the law or the rights of others — you agree to cover the reasonable costs " +
+        "example by using it in a way these terms prohibit, or in breach of the law or " +
+        "the rights of others — you agree to cover the reasonable costs " +
         "and damages that result.",
       "This does not apply to claims arising from our own wrongdoing, and it does not " +
         "apply where the law does not allow it.",
@@ -244,15 +228,13 @@ export const PRIVACY: LegalSection[] = [
       NO_COOKIES,
       ANONYMOUS_COUNTS,
       "There are no accounts. We never ask for your name, email address, or location.",
-      "The one thing you can give us is a chat message, which is public and is deleted " +
-        "after 30 days.",
+      "There is nowhere on ONE to write anything. The only thing you can send us is a " +
+        "one-tap answer to whether a pick was new to you.",
     ],
   },
   {
     heading: "What we keep",
     body: [
-      "Chat messages, with the display name you chose if you chose one. They are public, " +
-        "shown for the day they are posted, and deleted after 30 days.",
       "Your answer to “Was this new to you?”, stored against the pick it was " +
         "about and the anonymous daily code described above. Answering again changes your " +
         "answer rather than adding another.",
@@ -277,9 +259,8 @@ export const PRIVACY: LegalSection[] = [
   {
     heading: "What is stored on your device",
     body: [
-      "Your display name, if you set one, and the answers you gave, so the button you " +
-        "chose stays highlighted. These live in your browser's own storage. The name is " +
-        "sent to us only as part of a message you choose to post.",
+      "The answers you gave, so the button you chose stays highlighted. They live in " +
+        "your browser's own storage and are not sent to us in that form.",
       "Clearing your browser data removes them. We cannot recover them for you, because " +
         "we never had them.",
     ],
@@ -329,16 +310,16 @@ export const PRIVACY: LegalSection[] = [
     heading: "Children",
     body: [
       `${SITE_NAME} is not directed at children under 13, and we do not knowingly collect ` +
-        "information from them. If you believe a child has posted in the chat, write to us " +
-        "and we will remove it.",
+        "information from them. There is nothing here for anyone to post, and we hold no " +
+        "information that identifies a visitor of any age.",
     ],
   },
   {
     heading: "How long anything is kept",
     body: [
-      "Chat messages: 30 days. The daily random value: one day. Anonymous votes and " +
-        "activity: kept, because after that day they cannot be connected to anyone. Server " +
-        "logs: on our hosting provider's standard schedule.",
+      "The daily random value: one day. Anonymous votes and activity: kept, because " +
+        "after that day they cannot be connected to anyone. Server logs: on our hosting " +
+        "provider's standard schedule.",
       "Text from the articles and videos we evaluate is kept only until it has been " +
         "scored, and never in full.",
     ],
@@ -368,8 +349,8 @@ export const PRIVACY: LegalSection[] = [
         "to opt out of its sale or sharing.",
       "We sell nothing and share nothing for advertising. Because votes and activity are " +
         "stored under a daily code we cannot trace back to you, there is no profile to " +
-        "hand over. If you want a chat message removed, write to us with its text and " +
-        "roughly when you posted it.",
+        "hand over, and nothing you have written, because there is nowhere to write. If " +
+        "you have a question about any of this, write to us.",
     ],
   },
   {

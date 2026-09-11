@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { MessageSquare, X, Send, Play, BookOpen, Headphones, Link2, Check } from 'lucide-react';
+import { Play, BookOpen, Headphones, Link2, Check } from 'lucide-react';
 import { API_BASE } from '@/lib/api';
 import ApiWarning from '@/components/api-warning';
 import Thumbnail from '@/components/thumbnail';
@@ -41,18 +41,7 @@ interface HourlyResponse {
 
 const noopSubscribe = () => () => {};
 
-interface Comment {
-  id: string;
-  content: string;
-  display_name?: string | null;
-}
-
 export default function Home() {
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [newComment, setNewComment] = useState("");
-  const [displayName, setDisplayName] = usePersistentState("one_display_name");
-
   const [hourlyOne, setHourlyOne] = useState<HourlyResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -69,9 +58,6 @@ export default function Home() {
     () => typeof navigator !== "undefined" && typeof navigator.share === "function",
     () => false,
   );
-  const chatPanelRef = useRef<HTMLDivElement>(null);
-  const chatToggleRef = useRef<HTMLButtonElement>(null);
-
   const fetchHourly = useCallback((pickId?: string | null, signal?: AbortSignal) => {
     fetch(pickId ? `${API_BASE}/pick/${encodeURIComponent(pickId)}` : `${API_BASE}/hourly`, { signal })
       .then(res => res.json())
@@ -94,13 +80,6 @@ export default function Home() {
       });
   }, []);
 
-  const fetchComments = useCallback(() => {
-    fetch(`${API_BASE}/comments`)
-      .then(res => res.json())
-      .then(data => setComments(Array.isArray(data) ? data : []))
-      .catch(err => console.error(err));
-  }, []);
-
   // Stable, so the countdown's effect fires once when the slot turns over.
   const refreshLive = useCallback(() => fetchHourly(), [fetchHourly]);
 
@@ -111,56 +90,20 @@ export default function Home() {
     // the current pick instead of the one that was shared.
     const controller = new AbortController();
     fetchHourly(pinnedId, controller.signal);
-    fetchComments();
 
-    const commentInterval = setInterval(fetchComments, 10000);
     // Only the live view rolls over; a permalink must keep showing its own hour.
     const hourlyInterval = pinnedId ? null : setInterval(() => fetchHourly(), 60000);
     return () => {
       controller.abort();
-      clearInterval(commentInterval);
       if (hourlyInterval) clearInterval(hourlyInterval);
     };
-  }, [pinnedId, fetchHourly, fetchComments]);
-
-  // Escape closes the chat, and focus moves into and back out of the panel.
-  useEffect(() => {
-    if (!isChatOpen) return;
-    chatPanelRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setIsChatOpen(false);
-        chatToggleRef.current?.focus();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isChatOpen]);
+  }, [pinnedId, fetchHourly]);
 
   // One anonymous "view" per pick per visitor per day (deduplicated server-side).
   const viewedId = hourlyOne?.hourly?.id;
   useEffect(() => {
     if (viewedId) track(viewedId, "view");
   }, [viewedId]);
-
-  const handleSendComment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newComment.trim()) return;
-
-    const commentText = newComment;
-    setNewComment("");
-
-    try {
-      const res = await fetch(`${API_BASE}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: commentText, display_name: displayName.trim() || null })
-      });
-      if (res.ok) fetchComments();
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   const votes: Record<string, string> = (() => {
     try { return JSON.parse(votesJson || "{}"); } catch { return {}; }
@@ -292,16 +235,6 @@ export default function Home() {
             </span>
           )}
           <Link href="/archive" className="label link-accent">Archive</Link>
-          <button
-            ref={chatToggleRef}
-            onClick={() => setIsChatOpen(true)}
-            aria-expanded={isChatOpen}
-            className="label flex items-center gap-2 link-accent"
-            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-          >
-            <MessageSquare size={16} />
-            <span>Chat ({comments.length})</span>
-          </button>
         </div>
       </header>
 
@@ -528,100 +461,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Chat panel */}
-      <div
-        ref={chatPanelRef}
-        // Off-screen is not hidden: without inert the panel stays focusable and
-        // announced, so keyboard and screen-reader users land inside an invisible
-        // dialog. inert removes it from the tab order and the a11y tree entirely.
-        inert={!isChatOpen}
-        aria-hidden={!isChatOpen}
-        role="dialog"
-        aria-label="Daily Lobby chat"
-        tabIndex={-1}
-        className={`fixed top-0 right-0 h-full w-full md:w-[380px] z-50 flex flex-col transition-transform duration-200 ease-in-out ${
-          isChatOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
-        style={{ background: 'var(--surface)', borderLeft: '1px solid var(--line-strong)', outline: 'none' }}
-      >
-        <div className="px-5 py-4 flex justify-between items-center" style={{ borderBottom: '2px solid var(--rule)' }}>
-          <div>
-            <p className="display text-lg leading-none">Daily Lobby</p>
-            <p className="label mt-1" style={{ color: 'var(--ink-faint)' }}>Clears at midnight</p>
-          </div>
-          <button
-            onClick={() => { setIsChatOpen(false); chatToggleRef.current?.focus(); }}
-            aria-label="Close chat"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)' }}
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
-          {comments.length === 0 ? (
-            <p className="text-sm mt-4" style={{ color: 'var(--ink-faint)' }}>
-              No one has said anything yet today.
-            </p>
-          ) : (
-            comments.map((c, i) => (
-              <div key={c.id ?? i} className="pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
-                <p className="label" style={{ color: 'var(--accent)' }}>{c.display_name || "Anonymous"}</p>
-                <p className="text-[15px] mt-1" style={{ color: 'var(--ink)' }}>{c.content}</p>
-              </div>
-            ))
-          )}
-        </div>
-
-        <div className="px-5 py-4 flex flex-col gap-2" style={{ borderTop: '1px solid var(--line)' }}>
-          <input
-            type="text"
-            value={displayName}
-            maxLength={40}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="Your name (optional)"
-            className="w-full px-3 py-2 text-sm outline-none"
-            style={{
-              background: 'var(--paper)', color: 'var(--ink)',
-              border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)',
-            }}
-          />
-          <form onSubmit={handleSendComment} className="flex gap-2">
-            <input
-              type="text"
-              value={newComment}
-              maxLength={500}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Say something..."
-              className="flex-1 px-3 py-2 text-sm outline-none"
-              style={{
-                background: 'var(--paper)', color: 'var(--ink)',
-                border: '1px solid var(--line-strong)', borderRadius: 'var(--radius-sm)',
-              }}
-            />
-            <button
-              type="submit"
-              aria-label="Send message"
-              className="flex items-center justify-center"
-              style={{
-                background: 'var(--accent)', color: 'var(--ink-inverse)',
-                border: 'none', borderRadius: 'var(--radius-sm)',
-                width: 44, minHeight: 40, cursor: 'pointer',
-              }}
-            >
-              <Send size={15} />
-            </button>
-          </form>
-        </div>
-      </div>
-
-      {isChatOpen && (
-        <div
-          className="fixed inset-0 z-40 md:hidden"
-          style={{ background: 'rgba(26,16,10,0.35)' }}
-          onClick={() => setIsChatOpen(false)}
-        />
-      )}
     </main>
   );
 }

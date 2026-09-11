@@ -41,15 +41,15 @@ identifying anyone.
   privacy-focused analytics providers take, but it is a legal judgement, not a
   technical one.)
 
-## 4. Public chat
+## 4. Public chat -- withdrawn for now
 
-Anyone can post to the Daily Lobby with an optional display name. Messages are
-public, shown for the day, and deleted after 30 days. There is currently **no
-in-product report or delete tool** -- reports go to the contact address.
+The chat has been switched off (`CHAT_ENABLED` unset): nothing can be posted and
+`/comments` returns 404. The documents no longer describe it, so **this section
+needs no review unless the chat comes back.**
 
-- Is email-based reporting adequate for launch?
-- Section 230 considerations for a US operator, and whether the acceptable-use
-  wording is sufficient.
+If it does, the questions were: whether email-based reporting is adequate without
+an in-product report or delete tool, and Section 230 considerations for a US
+operator, including whether the acceptable-use wording is sufficient.
 
 ## 5. Children
 
@@ -92,7 +92,7 @@ If any of these change, the documents must change with them:
 | Nothing requested from an audio host before Listen | `frontend/src/app/page.tsx` (`<audio>` renders only after Listen) |
 | IP never stored; daily salt deleted | `backend/app/visitors.py` |
 | One vote per visitor per pick, changeable | `backend/app/queries.py` `create_feedback` |
-| Chat deleted after 30 days | `backend/app/queries.py` `purge_expired`, `COMMENT_RETENTION_DAYS` |
+| No chat; nothing can be posted | `backend/app/main.py` `CHAT_ENABLED`, and no panel in `page.tsx` |
 | At most 3,000 chars of source text, cleared once scored | `backend/app/previews.py`, `ai_scoring.py`, `migrations.py` |
 | Crawler honours robots.txt and identifies itself | `backend/app/rss_ingestion.py` |
 | Only public content is sent to Gemini, never user data | `backend/app/ai_scoring.py` |

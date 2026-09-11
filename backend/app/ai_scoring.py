@@ -74,7 +74,9 @@ def call_llm(prompt: str) -> dict:
     }
     
     try:
-        response = requests.post(url, headers=headers, json=payload)
+        # A timeout, because a stalled request with none blocks every scoring
+        # after it and never reports an error.
+        response = requests.post(url, headers=headers, json=payload, timeout=90)
         response.raise_for_status()
         data = response.json()
         text_response = data['candidates'][0]['content']['parts'][0]['text']

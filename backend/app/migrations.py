@@ -33,6 +33,8 @@ ADDED_COLUMNS = [
     ("hourly_ones", "views_at_feature", "BIGINT"),
     ("hourly_ones", "views_after_7d", "BIGINT"),
     ("hourly_ones", "outcome_checked_at", "TIMESTAMP"),
+    ("content_candidates", "needs_review", "BOOLEAN"),
+    ("content_candidates", "review_reason", "VARCHAR(300)"),
 ]
 
 

@@ -20,7 +20,7 @@ from . import database, models, runlog, slots, sources
 from .ai_scoring import score_candidate
 from .ingestion import ingest_seed_channels
 from .outcomes import check_pick_outcomes
-from .queries import promote_next_pick, purge_expired
+from .queries import promotable_filter, promote_next_pick, purge_expired
 from .rss_ingestion import ingest_feeds
 
 PIPELINE_EVERY_HOURS = int(os.getenv("PIPELINE_EVERY_HOURS", "6"))
@@ -97,8 +97,9 @@ def score_pending(db, limit=None):
 
 
 def ready_count(db):
+    # Held candidates are not ready: they cannot be published without a person
     return db.query(func.count(models.ContentCandidate.id)).filter(
-        models.ContentCandidate.status == models.Status.PENDING_REVIEW).scalar() or 0
+        *promotable_filter()).scalar() or 0
 
 
 def ingest_all(db):

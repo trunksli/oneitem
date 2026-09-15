@@ -255,6 +255,11 @@ export default function Home() {
 
       <div className="mx-auto px-6 md:px-10 py-10 md:py-16" style={{ maxWidth: 'var(--content-max)' }}>
 
+        {/* What ONE is, for anyone arriving cold from a shared link */}
+        <p className="text-[15px] mb-6" style={{ color: 'var(--ink-muted)' }}>
+          A single under-the-radar find, every six hours.
+        </p>
+
         <p className="label" style={{ color: 'var(--ink-faint)' }}>
           {pinnedId ? "A Past Diamond" : isStale ? "The Latest Pick" : "Current Feature"}
         </p>

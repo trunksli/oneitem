@@ -10,7 +10,7 @@ than ORM objects, so serialization behaves identically across library versions.
 import datetime
 import os
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 
 from . import models, runlog, slots
@@ -63,6 +63,15 @@ def _theme(value):
     return normalize_theme(_plain(value)) if value else None
 
 
+def promotable_filter():
+    """Candidates the scheduler may publish on its own: scored, and not held for review."""
+    return (
+        models.ContentCandidate.status == models.Status.PENDING_REVIEW,
+        or_(models.ContentCandidate.needs_review.is_(None),
+            models.ContentCandidate.needs_review == False),  # noqa: E712 (SQL, not Python)
+    )
+
+
 def _candidate_summary(candidate):
     if candidate is None:
         return {}
@@ -105,8 +114,8 @@ def promote_next_pick(db):
         models.HourlyOne.publish_time < current_slot
     ).order_by(models.HourlyOne.publish_time.desc()).first()
 
-    pending = db.query(models.ContentCandidate).filter(
-        models.ContentCandidate.status == models.Status.PENDING_REVIEW)
+    # Held candidates (e.g. suspected prompt injection) wait for a person instead
+    pending = db.query(models.ContentCandidate).filter(*promotable_filter())
     by_score = models.ContentCandidate.diamond_score.desc()
 
     contenders = []
@@ -498,6 +507,8 @@ def get_queue(db, limit=10):
         "clickbait_penalty": c.clickbait_penalty,
         "trustworthiness_score": c.trustworthiness_score,
         "ai_explanation": c.ai_explanation,
+        "needs_review": bool(c.needs_review),
+        "review_reason": c.review_reason,
     } for c in rows]
 
 

@@ -69,6 +69,11 @@ class ContentCandidate(Base):
     ai_explanation = Column(Text, nullable=True)
     admin_notes = Column(Text, nullable=True)
 
+    # Held back from automatic publishing (e.g. suspected prompt injection in the
+    # source); a person can still feature it from the admin.
+    needs_review = Column(Boolean, nullable=True)
+    review_reason = Column(String(300), nullable=True)
+
 class HourlyOne(Base):
     __tablename__ = "hourly_ones"
 

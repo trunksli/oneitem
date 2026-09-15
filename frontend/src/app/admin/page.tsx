@@ -28,6 +28,9 @@ interface QueueCandidate {
   clickbait_penalty: number | null;
   trustworthiness_score: number | null;
   ai_explanation: string | null;
+  // Held back from automatic publishing, e.g. suspected prompt injection
+  needs_review?: boolean;
+  review_reason?: string | null;
 }
 
 interface Slot {
@@ -348,6 +351,11 @@ export default function Admin() {
                 <p className="label" style={{ color: 'var(--accent)' }}>
                   #{rank + 1} / {c.source_type} / {c.theme || "?"}{c.tone ? ` / ${c.tone}` : ""}
                 </p>
+                {c.needs_review && (
+                  <p className="label mt-1" style={{ color: 'var(--danger, #b42318)' }}>
+                    Held, never auto-published{c.review_reason ? `: ${c.review_reason}` : ""}. Feature it to publish.
+                  </p>
+                )}
                 <a href={c.url} target="_blank" rel="noopener noreferrer"
                    className="display text-lg leading-snug" style={{ color: 'var(--ink)', textDecoration: 'none' }}>
                   {c.title}

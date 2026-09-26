@@ -175,10 +175,23 @@ part. Redeploying applies migrations at startup; to apply them without a deploy,
 run `python migrate.py` as a Render one-off job (it exits non-zero if anything is
 still missing).
 
-**If the Python build fails on a wheel** (usually `psycopg2-binary` on a
-brand-new interpreter), pin the runtime: add `PYTHON_VERSION` = `3.12.8` to the
-API service's environment variables and redeploy. `requirements.txt` uses
-minimum-version floors, so it otherwise installs whatever is current.
+**The Python version is pinned** in `backend/.python-version` (3.12.8). Without
+it the host builds on whatever interpreter is current — it reached 3.14 in
+September 2026 — and packages that have no wheels for a brand-new Python are
+compiled from source, or fail. If the host ignores that file, set `PYTHON_VERSION`
+= `3.12.8` in the API service's environment variables instead. Raise it
+deliberately, after checking that psycopg, Pillow and pydantic ship wheels for
+the version you are moving to.
+
+**`ModuleNotFoundError: No module named 'psycopg'` on boot** means the Postgres
+driver named in the database URL is not installed. Because the requirements use
+floors, a rebuild can pick up a newer SQLAlchemy whose default driver for a bare
+`postgresql://` URL differs from the one installed — which is what broke the
+deploy on 26 September 2026. `app/database.py` now names the driver explicitly
+(psycopg 3 when present, else psycopg2), so the URL and the installed package
+cannot drift apart. If it recurs, check that `psycopg[binary]` is still in
+`requirements.txt` and that `DATABASE_URL` has not been set by hand to a
+`postgresql+<driver>://` form whose driver is absent.
 
 **The chat is switched off.** `/comments` returns 404 and the panel is gone from
 the site, while the picks themselves are being proved out. The table, the

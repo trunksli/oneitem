@@ -10,8 +10,11 @@ requests>=2.31
 python-dotenv>=1.0
 youtube-transcript-api>=0.6.2
 
-# Postgres driver (unused when DATABASE_URL is unset and SQLite is the fallback)
-psycopg2-binary>=2.9.9
+# Postgres driver (unused when DATABASE_URL is unset and SQLite is the fallback).
+# psycopg 3 is the one current SQLAlchemy reaches for, and it ships wheels for new
+# Python releases sooner than psycopg2 does. app/database.py names the driver in
+# the URL, so whichever of the two is installed is the one that gets used.
+psycopg[binary]>=3.1
 
 # Timezone data for the ET-anchored publishing slots (app/slots.py). zoneinfo
 # needs tzdata where the OS does not ship it; pytz is the fallback for older Pythons.

@@ -1,0 +1,31 @@
+# The dependency list a human edits. requirements.txt is generated from this file
+# and is what the host installs -- see .github/workflows/lock-dependencies.yml.
+#
+# Ranges here, exact pins there. Two deploys broke because this file's floors let
+# an unrelated rebuild install newer packages: one changed SQLAlchemy's default
+# Postgres driver, and the host had moved to a Python with no wheels for some of
+# these. To upgrade: change a line here, run the "Lock dependencies" workflow,
+# commit the requirements.txt it produces, and deploy that deliberately.
+
+fastapi>=0.110
+uvicorn[standard]>=0.29
+SQLAlchemy>=2.0
+pydantic>=2.6
+requests>=2.31
+python-dotenv>=1.0
+youtube-transcript-api>=0.6.2
+
+# Postgres driver (unused when DATABASE_URL is unset and SQLite is the fallback).
+# psycopg 3 is the one current SQLAlchemy reaches for, and it ships wheels for new
+# Python releases sooner than psycopg2 does. app/database.py names the driver in
+# the URL, so whichever of the two is installed is the one that gets used.
+psycopg[binary]>=3.1
+
+# Timezone data for the ET-anchored publishing slots (app/slots.py). zoneinfo
+# needs tzdata where the OS does not ship it; pytz is the fallback for older Pythons.
+tzdata>=2024.1
+pytz>=2023.3
+
+# Link-preview cards (app/share.py). 10.1+ ships a scalable default font,
+# the fallback when the host has no serif fonts installed.
+Pillow>=10.1

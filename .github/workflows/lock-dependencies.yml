@@ -1,0 +1,54 @@
+name: Lock dependencies
+
+# Produces backend/requirements.txt -- every package the API needs, at an exact
+# version, resolved on the same Python the host runs (backend/.python-version).
+#
+# This exists because the deploy has broken twice from unpinned dependencies: a
+# rebuild installed a newer SQLAlchemy whose default Postgres driver was not the
+# one installed, on a Python the host had silently moved forward. Locking here
+# rather than on a developer machine means the resolution matches the deployment
+# target, not whatever happens to be on a laptop.
+#
+# Run it from the Actions tab (or `gh workflow run lock-dependencies.yml`) after
+# editing requirements.in, then commit the file it produces.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: backend/.python-version
+
+      - name: Resolve and freeze
+        working-directory: backend
+        run: |
+          python -m venv .lockenv
+          .lockenv/bin/python -m pip install --upgrade pip
+          # Wheels only: a package that would need compiling here would also need
+          # compiling on the host, which is how a build fails at 3am.
+          .lockenv/bin/pip install --only-binary=:all: -r requirements.in
+          {
+            echo "# GENERATED FILE -- do not edit by hand."
+            echo "# Edit requirements.in, then run the 'Lock dependencies' workflow"
+            echo "# (.github/workflows/lock-dependencies.yml) and commit the result."
+            echo "#"
+            echo "# Resolved on Python $(python -c 'import platform; print(platform.python_version())') at $(date -u +%Y-%m-%d)."
+            echo "# Every version below is what the host installs -- including indirect"
+            echo "# dependencies, which is the half that unpinned builds get wrong."
+            echo ""
+            .lockenv/bin/pip freeze --exclude-editable
+          } > requirements.locked.txt
+          echo "----- resolved -----"
+          cat requirements.locked.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: requirements-locked
+          path: backend/requirements.locked.txt
+          retention-days: 7

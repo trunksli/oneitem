@@ -175,6 +175,14 @@ part. Redeploying applies migrations at startup; to apply them without a deploy,
 run `python migrate.py` as a Render one-off job (it exits non-zero if anything is
 still missing).
 
+**Dependencies are locked, not floating.** `backend/requirements.in` is the list a
+human edits; `backend/requirements.txt` is generated from it and pins every
+package, indirect ones included, at the versions resolved on the deployment's own
+Python. To change a dependency: edit `requirements.in`, run the **Lock
+dependencies** workflow from the Actions tab (or `gh workflow run
+lock-dependencies.yml`), download its `requirements-locked` artifact, and commit
+it as `requirements.txt`. Never hand-edit the generated file.
+
 **The Python version is pinned** in `backend/.python-version` (3.12.8). Without
 it the host builds on whatever interpreter is current — it reached 3.14 in
 September 2026 — and packages that have no wheels for a brand-new Python are

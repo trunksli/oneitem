@@ -167,3 +167,9 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
       or set the variable properly.
 - [ ] Confirm the Postgres upgrade landed; `/status` reports the active backend.
       The archive and all incrementality data live there.
+- [ ] **Scheduled dependency re-lock** — pinning everything (26 Sep 2026) stopped
+      surprise breakage but also stopped security patches arriving on their own;
+      `requests` and `urllib3` sit in the request path. Add a monthly workflow that
+      re-runs `lock-dependencies.yml` and opens a PR with the new
+      `requirements.txt`, so upgrades arrive as something to review rather than a
+      3am build failure. Until then, re-lock by hand every month or two.

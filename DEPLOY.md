@@ -121,11 +121,30 @@ font otherwise. For a consistent look, add an OFL-licensed `serif.ttf` and
 
 ## Things that will bite you
 
-**Free web services sleep.** After ~15 minutes of no traffic Render spins the
-service down; the next request takes ~50 seconds to wake it. While asleep the
-scheduler is not running either, so hours get skipped. The site still works —
-`/hourly` falls back to the most recent pick and flags it `is_stale` — but the
-hourly rhythm is only real on a paid instance or with an external pinger.
+**Free web services sleep, and a sleeping service publishes nothing.** After ~15
+minutes without traffic Render stops the service; the next request takes ~50
+seconds to wake it. The scheduler runs *inside* that service, so it stops too.
+Left alone, slots pass unfilled and a new pick appears only when someone visits
+(between 13 and 22 September 2026 the site published three picks, on the three
+days it was checked).
+
+The fix is `.github/workflows/publish-slots.yml`: a scheduled GitHub Actions job
+that calls `/hourly` a few minutes past each slot, which wakes the service and
+fills the slot on the way through. It lists both the daylight-saving and winter
+UTC hours, because slots follow New York time. If a slot is still empty
+afterwards the job fails, so a silent stall turns into an email from GitHub.
+Point it at another API with a repository variable named `ONE_API_URL`.
+
+Alternatives, if you would rather not use Actions:
+
+| Option | Cost | Notes |
+| --- | --- | --- |
+| UptimeRobot / cron-job.org hitting `/hourly` every 10 min | free | Also keeps the service warm for visitors. Uses most of the 750 free instance-hours a month. |
+| Render paid instance (Starter) | ~$7/mo | Never sleeps, so the in-process scheduler just works and no pinger is needed. |
+| Render Cron Job service | paid | Same idea as the Actions job, inside Render. |
+
+Missed slots are not backfilled. A gap stays a gap, which keeps the archive
+honest about what was actually published when.
 
 **`NEXT_PUBLIC_API_URL` is baked in at build time,** not read at runtime.
 Changing it requires redeploying the static site, not just restarting it.

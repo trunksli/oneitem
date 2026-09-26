@@ -147,6 +147,18 @@ def run_cycle():
     db = database.SessionLocal()
     runlog.start()
     try:
+        # Publishing comes first, and takes a fraction of a second. Ingesting and
+        # scoring take minutes, and on a host that stops the service the moment
+        # traffic pauses, a cycle that scored first often died before it ever
+        # filled the slot. Everything after this point is preparation for later
+        # slots; this line is the one the site depends on right now.
+        try:
+            schedule_top_candidate(db)
+        except Exception:
+            print("Scheduling failed:")
+            traceback.print_exc()
+            db.rollback()
+
         # Scoring is not tied to ingestion. It used to run only straight after an
         # ingest, and ingestion is skipped for 6 hours after it last added
         # anything -- so if the free host slept between the two, the new items
@@ -174,6 +186,8 @@ def run_cycle():
             runlog.record(error="%s: %s" % (type(e).__name__, str(e)[:200]))
             db.rollback()
 
+        # A second attempt, in case fresh scoring produced the first thing worth
+        # publishing since the top of this cycle.
         try:
             schedule_top_candidate(db)
         except Exception:

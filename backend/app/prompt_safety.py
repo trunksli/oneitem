@@ -1,5 +1,5 @@
 """
-Defences against prompt injection from the work ONE evaluates.
+Defences against prompt injection from the work Curiolet evaluates.
 
 Titles, descriptions, transcripts and articles are written by third parties, and
 they are pasted into the prompts that decide what reaches the homepage. Text like

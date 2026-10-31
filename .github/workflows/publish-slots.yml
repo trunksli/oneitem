@@ -9,7 +9,7 @@ name: Publish the next pick
 # current slot on the way through, and waking it also starts a full cycle
 # (ingest, score, record outcomes) inside the API.
 #
-# Cron is UTC and ONE's slots follow New York, so both halves of the year are
+# Cron is UTC and Curiolet's slots follow New York, so both halves of the year are
 # listed: 04/10/16/22 UTC during daylight saving, 05/11/17/23 UTC in winter. The
 # four extra calls each day are free -- filling a slot that is already filled does
 # nothing at all.

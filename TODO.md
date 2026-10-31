@@ -1,8 +1,8 @@
-# ONE — backlog
+# Curiolet — backlog
 
 Open items from the multi-disciplinary review (2026-09-03). Ordered by discipline;
 severity noted per item. Items marked **[blocks learning]** gate the product's
-central question — whether ONE causes consumption that would not otherwise happen
+central question — whether Curiolet causes consumption that would not otherwise happen
 (see [implementation_plan.md](implementation_plan.md)).
 
 Done in that pass and not repeated below: `javascript:` URL sanitation and
@@ -79,7 +79,7 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
 ## Design
 
 - [x] (done, 15 Sep 2026: "A single under-the-radar find, every six hours." above the
-      pick) **A first-time visitor is never told what ONE is.** A fuller about or
+      pick) **A first-time visitor is never told what Curiolet is.** A fuller about or
       manifesto page is still open under Content design.
 - [x] (done, Phase 2: countdown to the next pick) **The hour is not felt** — no countdown, no rhythm, no scarcity. The core
       mechanic is decorative rather than structural.
@@ -146,7 +146,7 @@ Already satisfied: verified AA+ contrast in both themes, `prefers-reduced-motion
       blocker on sharing. Note: per-item preview images need server rendering,
       which the static export cannot do (see below).
 - [x] (done, Phase 5) **Replace the default Next.js favicon** — untouched since the scaffold.
-- [ ] Decide the name (see the naming exploration; "ONE" is unsearchable and
+- [ ] Decide the name (see the naming exploration; "Curiolet" is unsearchable and
       undomainable).
 - [ ] Positioning: lead with obscurity, not the mechanic — "the internet already
       showed you everything it wanted to; this is the other stuff."

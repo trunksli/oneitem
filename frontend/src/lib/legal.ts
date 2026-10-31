@@ -1,13 +1,13 @@
 /**
- * Legal and disclosure copy for ONE, kept as data so the routes stay
+ * Legal and disclosure copy for Curiolet, kept as data so the routes stay
  * presentational and a wording change never has to be made twice.
  *
  * Adapted from the Balmody (Verse) documents by the same operator. The structure,
  * the plain-language approach, and the standard clauses -- warranties,
  * liability, indemnity, governing law, severability -- carry over. Everything
  * describing what the service DOES has been rewritten, because the products
- * handle data very differently: Verse stores nothing, while ONE keeps anonymous
- * votes and anonymous engagement counts.
+ * handle data very differently: Verse stores nothing, while Curiolet keeps
+ * anonymous votes and anonymous engagement counts.
  *
  * NOT LEGAL ADVICE. Drafted by the engineering side for review by counsel before
  * launch; see LEGAL-REVIEW.md at the repo root for what the reviewer is asked to
@@ -20,7 +20,7 @@
  *   - Votes and engagement: keyed by a daily-salted hash of network address and
  *     browser type (backend/app/visitors.py). The address is never stored; each
  *     earlier day's salt is deleted.
- *   - ONE sets no cookies and loads no analytics or advertising scripts. Fonts are
+ *   - Curiolet sets no cookies and loads no analytics or advertising scripts. Fonts are
  *     self-hosted by next/font, so no request goes to Google Fonts. YouTube
  *     players use youtube-nocookie.com; Vimeo players use dnt=1; podcast audio
  *     is only requested after Listen is pressed (frontend/src/app/page.tsx).
@@ -28,15 +28,16 @@
  *     scored, then cleared (backend/app/previews.py SCORING_TEXT_LIMIT).
  */
 
-export const SITE_NAME = "ONE";
+export const SITE_NAME = "Curiolet";
 
-export const LAST_UPDATED = "11 September 2026";
+export const LAST_UPDATED = "30 October 2026";
 
 /**
- * Shared with Balmody until ONE has its own name and address -- confirmed by the
- * operator, 9 September 2026. This is where people exercise privacy rights and
- * send takedown requests, so it must keep receiving mail. It appears nowhere
- * else in the codebase; change it here.
+ * Still the Balmody address, now that the service has a name and a domain of its
+ * own (curiolet.com, October 2026). Worth replacing with a Curiolet address once
+ * one exists: this is where people exercise privacy rights and send takedown
+ * requests, so it must keep receiving mail. It appears nowhere else in the
+ * codebase; change it here.
  */
 export const CONTACT_EMAIL = "balmodyco@gmail.com";
 
@@ -51,18 +52,18 @@ export interface LegalSection {
 }
 
 export const AI_DISCLOSURE =
-  "The short previews and the “why this one” notes on ONE are written by an " +
+  "The short previews and the “why this one” notes on Curiolet are written by an " +
   "AI model (Google Gemini) from the source material, and are not checked by a " +
   "person before they appear. They can be wrong, and can be wrong confidently. " +
   "The original work is always one click away; please treat it, not our summary, " +
   "as the authority.";
 
 export const NO_COOKIES =
-  "ONE sets no cookies. There are no advertising networks, no analytics services, " +
+  "Curiolet sets no cookies. There are no advertising networks, no analytics services, " +
   "no session recording, and no third-party trackers on this site.";
 
 export const ANONYMOUS_COUNTS =
-  "We count views, plays and votes, because the whole point of ONE is to learn " +
+  "We count views, plays and votes, because the whole point of Curiolet is to learn " +
   "whether a pick was worth your time. So that one person is not counted twice in a " +
   "day, our server turns your network address and browser type into a code, using a " +
   "random value that is destroyed every day. The address itself is never stored, " +
@@ -99,11 +100,11 @@ export const TERMS: LegalSection[] = [
       "If you created something we feature and would rather we did not, write to " +
         `${CONTACT_EMAIL} and we will remove it. You do not need to give a reason.`,
       "For a formal copyright complaint, please include: the work you believe is " +
-        "infringed; the page on ONE where it appears; how to contact you; a statement " +
+        "infringed; the page on Curiolet where it appears; how to contact you; a statement " +
         "that you believe in good faith the use is not authorised; and a statement that " +
         "the information in your notice is accurate and that you are the rights holder " +
         "or are authorised to act for them.",
-      "Our crawler identifies itself as ONE-curator, follows the rules publishers set " +
+      "Our crawler identifies itself as Curiolet-curator, follows the rules publishers set " +
         "in robots.txt, and keeps no full copy of what it reads.",
     ],
   },
@@ -132,7 +133,7 @@ export const TERMS: LegalSection[] = [
   {
     heading: "Links and services we do not control",
     body: [
-      "ONE links to websites and embeds players run by other companies. We do not " +
+      "Curiolet links to websites and embeds players run by other companies. We do not " +
         "control them and are not responsible for their content, availability, or " +
         "practices. When you follow a link or press play, their terms and privacy " +
         "policies apply.",
@@ -228,7 +229,7 @@ export const PRIVACY: LegalSection[] = [
       NO_COOKIES,
       ANONYMOUS_COUNTS,
       "There are no accounts. We never ask for your name, email address, or location.",
-      "There is nowhere on ONE to write anything. The only thing you can send us is a " +
+      "There is nowhere on Curiolet to write anything. The only thing you can send us is a " +
         "one-tap answer to whether a pick was new to you.",
     ],
   },
@@ -282,14 +283,14 @@ export const PRIVACY: LegalSection[] = [
         "is requested from it until you press Listen. Podcast hosts commonly measure " +
         "downloads, which can include your network address and device type; that " +
         "information goes to them, not to us.",
-      "When you follow a link to the original work, you leave ONE and that site's own " +
+      "When you follow a link to the original work, you leave Curiolet and that site's own " +
         "privacy practices apply.",
     ],
   },
   {
     heading: "Who else is involved",
     body: [
-      "Our hosting provider runs the servers and database that ONE uses.",
+      "Our hosting provider runs the servers and database that Curiolet uses.",
       "We send the public work we are evaluating — titles, descriptions, and the " +
         "opening of an article or transcript — to Google (Gemini) to score it and " +
         "write the previews. We never send your messages, your votes, or anything about you.",

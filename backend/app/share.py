@@ -29,18 +29,22 @@ import threading
 
 from . import queries
 
-PUBLIC_SITE_URL = os.getenv("PUBLIC_SITE_URL", "https://one-web-bwjk.onrender.com").rstrip("/")
+PUBLIC_SITE_URL = os.getenv("PUBLIC_SITE_URL", "https://curiolet.com").rstrip("/")
 API_PUBLIC_URL = os.getenv("API_PUBLIC_URL", "https://one-api-lcrh.onrender.com").rstrip("/")
 
-SITE_NAME = "ONE"
+SITE_NAME = "Curiolet"
 TAGLINE = "One good thing, four times a day"
 
+# The brand palette, matching frontend/src/app/globals.css. Two corals for the
+# same reason as there: the logo's coral is a graphic colour, too light to read
+# as text, so ACCENT is the deepened version and STAR is the logo's own.
 CARD_W, CARD_H = 1200, 630
-PAPER = (253, 248, 243)
-INK = (42, 26, 15)
-INK_MUTED = (107, 88, 71)
-ACCENT = (194, 65, 12)
-LINE = (228, 215, 200)
+PAPER = (251, 247, 239)      # cream
+INK = (22, 36, 63)           # navy
+INK_MUTED = (74, 89, 112)
+ACCENT = (193, 61, 36)       # deepened coral, for text and rules
+STAR = (253, 106, 75)        # the logo's coral, for the mark only
+LINE = (229, 222, 207)
 
 # Pick ids are UUIDs; anything else never reaches the database or a URL.
 _ID = re.compile(r"^[A-Za-z0-9-]{1,64}$")
@@ -75,7 +79,7 @@ def share_page(db, hourly_id):
     pick = _pick(db, hourly_id)
     candidate = pick.get("candidate") or {}
 
-    title = _trim(candidate.get("title") or "A pick on ONE", 140)
+    title = _trim(candidate.get("title") or "A pick on Curiolet", 140)
     description = _trim(candidate.get("preview_text") or candidate.get("ai_explanation")
                         or TAGLINE, 220)
     share_url = "%s/p/%s" % (PUBLIC_SITE_URL, hourly_id)
@@ -224,8 +228,15 @@ def draw_card(kicker, title, byline, footer=TAGLINE):
     margin = 72
     max_width = CARD_W - 2 * margin
 
-    draw.rectangle([0, 0, CARD_W, 10], fill=ACCENT)  # the ember rule, as on the site
-    draw.text((margin, 56), SITE_NAME, font=_font("serif-bold", 54), fill=INK)
+    draw.rectangle([0, 0, CARD_W, 10], fill=ACCENT)  # the rule, as on the site
+
+    # The logo's four-point star, then the name: the same lockup as the site header
+    sx, sy, r = margin + 15, 83, 15
+    draw.polygon([(sx, sy - r), (sx + r * 0.3, sy - r * 0.3), (sx + r, sy),
+                  (sx + r * 0.3, sy + r * 0.3), (sx, sy + r),
+                  (sx - r * 0.3, sy + r * 0.3), (sx - r, sy),
+                  (sx - r * 0.3, sy - r * 0.3)], fill=STAR)
+    draw.text((margin + 44, 56), SITE_NAME, font=_font("serif-bold", 54), fill=INK)
     draw.text((margin, 130), _fit(draw, kicker, _font("sans-bold", 24), max_width),
               font=_font("sans-bold", 24), fill=ACCENT)
 
@@ -271,7 +282,7 @@ def render_card(db, hourly_id):
     candidate = pick.get("candidate") or {}
     hourly = pick.get("hourly") or {}
 
-    title = candidate.get("title") or "A pick on ONE"
+    title = candidate.get("title") or "A pick on Curiolet"
     kicker = " \u00b7 ".join(x for x in [(hourly.get("theme") or "").upper(),
                                         (candidate.get("tone") or "").upper()] if x) or "FEATURED"
     byline = " / ".join(x for x in [candidate.get("creator_name"),

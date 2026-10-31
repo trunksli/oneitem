@@ -6,6 +6,7 @@ import { safeExternalUrl } from '@/lib/url';
 import { API_BASE } from '@/lib/api';
 import ApiWarning from '@/components/api-warning';
 import Thumbnail from '@/components/thumbnail';
+import Wordmark from '@/components/wordmark';
 
 
 interface ArchiveEntry {
@@ -59,8 +60,8 @@ export default function Archive() {
         className="w-full flex justify-between items-center gap-4 px-6 md:px-10 py-4"
         style={{ borderBottom: '2px solid var(--rule)' }}
       >
-        <Link href="/" className="display text-2xl font-bold tracking-tight leading-none" style={{ color: 'var(--ink)', textDecoration: 'none' }}>
-          ONE
+        <Link href="/" style={{ color: 'var(--ink)', textDecoration: 'none' }}>
+          <Wordmark />
         </Link>
         <Link href="/" className="label link-accent">Now Playing &#8594;</Link>
       </header>

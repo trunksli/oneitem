@@ -5,7 +5,7 @@ import { SITE_NAME, TERMS } from "@/lib/legal";
 export const metadata: Metadata = {
   title: `Terms of Service · ${SITE_NAME}`,
   description:
-    "The terms under which ONE is provided: the work belongs to its creators, previews " +
+    "The terms under which Curiolet is provided: the work belongs to its creators, previews " +
     "are AI-written, and the chat is public.",
 };
 

@@ -1,5 +1,5 @@
 """
-HTTP layer for ONE.
+HTTP layer for Curiolet.
 
 Deliberately thin: all database logic lives in queries.py (which imports no web
 framework, so it can be tested without FastAPI installed). This module handles
@@ -22,7 +22,7 @@ models.Base.metadata.create_all(bind=engine)
 # create_all never alters existing tables, and there is live data to bring forward.
 ensure_schema(engine)
 
-app = FastAPI(title="ONE - Daily Diamond API")
+app = FastAPI(title="Curiolet - Daily Diamond API")
 
 # Lock the API to the deployed frontend in production; "*" is only the local default.
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
@@ -122,7 +122,7 @@ def status(db: Session = Depends(get_db)):
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to ONE API"}
+    return {"message": "Welcome to Curiolet API"}
 
 
 @app.get("/hourly")

@@ -36,10 +36,10 @@ ITUNES_NS = "{http://www.itunes.com/dtds/podcast-1.0.dtd}"
 CONTENT_NS = "{http://purl.org/rss/1.0/modules/content/}"
 
 # A well-behaved crawler says who it is and how to reach its operator.
-CRAWLER_TOKEN = "ONE-curator"
+CRAWLER_TOKEN = "Curiolet-curator"
 USER_AGENT = "%s/0.2 (+%s; %s)" % (
     CRAWLER_TOKEN,
-    os.getenv("PUBLIC_SITE_URL", "https://one-web-bwjk.onrender.com"),
+    os.getenv("PUBLIC_SITE_URL", "https://curiolet.com"),
     os.getenv("CRAWLER_CONTACT", "balmodyco@gmail.com"),
 )
 

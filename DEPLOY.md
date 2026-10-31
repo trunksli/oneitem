@@ -1,4 +1,4 @@
-# Deploying ONE to Render
+# Deploying Curiolet to Render
 
 Two services and a database:
 

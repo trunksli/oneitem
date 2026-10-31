@@ -215,7 +215,7 @@ def run_cycle():
 
 
 def scheduler_loop():
-    print("ONE scheduler running (pipeline every %dh)." % PIPELINE_EVERY_HOURS)
+    print("Curiolet scheduler running (pipeline every %dh)." % PIPELINE_EVERY_HOURS)
     while True:
         try:
             run_cycle()

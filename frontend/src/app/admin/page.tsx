@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { API_BASE } from '@/lib/api';
 import ApiWarning from '@/components/api-warning';
 import Thumbnail from '@/components/thumbnail';
+import Wordmark from '@/components/wordmark';
 import { useSessionState } from '@/lib/use-persistent-state';
 
 interface QueueCandidate {
@@ -219,8 +220,7 @@ export default function Admin() {
         <ApiWarning failed={loadFailed} />
         <header className="w-full flex justify-between items-center gap-4 px-6 md:px-10 py-4"
                 style={{ borderBottom: '2px solid var(--rule)' }}>
-          <Link href="/" className="display text-2xl font-bold tracking-tight leading-none"
-                style={{ color: 'var(--ink)', textDecoration: 'none' }}>ONE</Link>
+          <Link href="/" style={{ color: 'var(--ink)', textDecoration: 'none' }}><Wordmark /></Link>
           <Link href="/" className="label link-accent">Now Playing &#8594;</Link>
         </header>
 
@@ -259,8 +259,7 @@ export default function Admin() {
 
       <header className="w-full flex justify-between items-center gap-4 px-6 md:px-10 py-4"
               style={{ borderBottom: '2px solid var(--rule)' }}>
-        <Link href="/" className="display text-2xl font-bold tracking-tight leading-none"
-              style={{ color: 'var(--ink)', textDecoration: 'none' }}>ONE</Link>
+        <Link href="/" style={{ color: 'var(--ink)', textDecoration: 'none' }}><Wordmark /></Link>
         <div className="flex items-center gap-5">
           <Link href="/" className="label link-accent">Now Playing &#8594;</Link>
           <button onClick={signOut} className="label link-accent"

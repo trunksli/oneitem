@@ -7,6 +7,7 @@ import { API_BASE } from '@/lib/api';
 import ApiWarning from '@/components/api-warning';
 import Thumbnail from '@/components/thumbnail';
 import Countdown from '@/components/countdown';
+import Wordmark from '@/components/wordmark';
 import { usePersistentState } from '@/lib/use-persistent-state';
 import { safeExternalUrl, permalinkFor, xShareUrl, blueskyShareUrl } from '@/lib/url';
 import { usePickParam } from '@/lib/use-pick-param';
@@ -136,7 +137,7 @@ export default function Home() {
       <main className="min-h-screen flex flex-col">
         <ApiWarning failed={loadFailed} />
         <div className="flex-1 flex items-center justify-center">
-          <span className="label" style={{ color: 'var(--ink-faint)' }}>Loading ONE</span>
+          <span className="label" style={{ color: 'var(--ink-faint)' }}>Loading Curiolet</span>
         </div>
       </main>
     );
@@ -189,7 +190,7 @@ export default function Home() {
     }
   };
 
-  const shareText = candidate ? `${candidate.title} — via ONE` : "ONE";
+  const shareText = candidate ? `${candidate.title} — via Curiolet` : "Curiolet";
 
   const openShare = (kind: "share_x" | "share_bluesky") => {
     const id = hourlyOne?.hourly?.id;
@@ -204,7 +205,7 @@ export default function Home() {
     const id = hourlyOne?.hourly?.id;
     if (!id) return;
     try {
-      await navigator.share({ title: candidate?.title || "ONE", text: shareText, url: permalinkFor(id) });
+      await navigator.share({ title: candidate?.title || "Curiolet", text: shareText, url: permalinkFor(id) });
       track(id, "share_native");
     } catch {
       // Dismissing the share sheet rejects the promise; that is not an error.
@@ -221,7 +222,7 @@ export default function Home() {
         style={{ borderBottom: '2px solid var(--rule)' }}
       >
         <div className="flex flex-col">
-          <span className="display text-2xl font-bold tracking-tight leading-none">ONE</span>
+          <Wordmark />
           <span className="label mt-1" style={{ color: 'var(--accent)' }}>{theme}</span>
         </div>
         <div className="flex items-center gap-5">
@@ -255,7 +256,7 @@ export default function Home() {
 
       <div className="mx-auto px-6 md:px-10 py-10 md:py-16" style={{ maxWidth: 'var(--content-max)' }}>
 
-        {/* What ONE is, for anyone arriving cold from a shared link */}
+        {/* What Curiolet is, for anyone arriving cold from a shared link */}
         <p className="text-[15px] mb-6" style={{ color: 'var(--ink-muted)' }}>
           A single under-the-radar find, every six hours.
         </p>

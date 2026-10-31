@@ -8,7 +8,7 @@ application code instead, and unknown values fall back to "Curious".
 
 Two axes, borrowed from how Fark labels links. Fark's tags are mostly *tone*
 ("tells the reader what to expect") rather than subject, which is why its front
-page reads as varied even when the underlying subjects repeat. ONE keeps subject
+page reads as varied even when the underlying subjects repeat. Curiolet keeps subject
 themes for rotation, but the tone axis is what stops a day of well-scored
 science from feeling like homework.
 """

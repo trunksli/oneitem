@@ -5,7 +5,7 @@ import { PRIVACY, SITE_NAME } from "@/lib/legal";
 export const metadata: Metadata = {
   title: `Privacy · ${SITE_NAME}`,
   description:
-    "ONE sets no cookies and runs no trackers. Views and votes are counted with a code " +
+    "Curiolet sets no cookies and runs no trackers. Views and votes are counted with a code " +
     "that cannot be traced back to anyone, and chat is deleted after 30 days.",
 };
 

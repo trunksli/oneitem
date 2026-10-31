@@ -1,5 +1,5 @@
 """
-Standalone scheduler process: keeps ONE actually hourly.
+Standalone scheduler process: keeps Curiolet actually hourly.
 
 Every hour it refreshes stale candidates (ingest + score), promotes the next
 HourlyOne, and records 7-day view outcomes.

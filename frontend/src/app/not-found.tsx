@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useSyncExternalStore } from 'react';
+import Wordmark from '@/components/wordmark';
 
 const noopSubscribe = () => () => {};
 
@@ -30,8 +31,7 @@ export default function NotFound() {
     <main className="min-h-screen" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
       <header className="w-full flex justify-between items-center gap-4 px-6 md:px-10 py-4"
               style={{ borderBottom: '2px solid var(--rule)' }}>
-        <Link href="/" className="display text-2xl font-bold tracking-tight leading-none"
-              style={{ color: 'var(--ink)', textDecoration: 'none' }}>ONE</Link>
+        <Link href="/" style={{ color: 'var(--ink)', textDecoration: 'none' }}><Wordmark /></Link>
         <Link href="/" className="label link-accent">Now Playing &#8594;</Link>
       </header>
       <div className="mx-auto px-6 md:px-10 py-16" style={{ maxWidth: 'var(--content-max)' }}>

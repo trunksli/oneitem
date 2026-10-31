@@ -1,7 +1,7 @@
 """
 Publishing slots: a new pick four times a day, anchored to a timezone.
 
-ONE used to publish hourly. It now publishes at fixed local times -- by default
+Curiolet used to publish hourly. It now publishes at fixed local times -- by default
 6am, 12pm, 6pm and midnight US Eastern -- which suits a reader who wants fewer,
 better things rather than a feed.
 

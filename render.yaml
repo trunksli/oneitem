@@ -1,4 +1,4 @@
-# Render Blueprint for ONE.
+# Render Blueprint for Curiolet.
 #
 # Three pieces: a Python API (which also runs the hourly scheduler in-process),
 # a static Next.js site, and a Postgres database.

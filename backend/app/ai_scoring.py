@@ -131,8 +131,8 @@ def score_candidate(db: Session, candidate: models.ContentCandidate):
     # Rules and third-party material are kept apart: the rules go in the system
     # instruction, and everything someone else wrote -- title and description
     # included -- is fenced as data. See app/prompt_safety.py.
-    system = f"""You are an expert content curator for a service called ONE.
-ONE features one exceptional piece of content at a time, four times a day. It looks for "diamonds in the rough": highly interesting, trustworthy, non-clickbait work by obsessive experts.
+    system = f"""You are an expert content curator for a service called Curiolet.
+Curiolet features one exceptional piece of content at a time, four times a day. It looks for "diamonds in the rough": highly interesting, trustworthy, non-clickbait work by obsessive experts.
 
 {UNTRUSTED_CONTENT_RULES}
 

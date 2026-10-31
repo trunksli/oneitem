@@ -97,7 +97,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/status":
                 self._send(queries.get_status(db))
             elif path == "/":
-                self._send({"message": "Welcome to ONE API (dev server)"})
+                self._send({"message": "Welcome to Curiolet API (dev server)"})
             elif path == "/hourly":
                 self._send(queries.get_hourly(db))
             elif path == "/comments":
@@ -219,5 +219,5 @@ if __name__ == "__main__":
     # Deliberately not PORT: this repo's .env carries a stale PORT=3000 from an
     # old Express setup, which also collides with the Next.js dev server.
     port = int(os.getenv("ONE_DEV_PORT", "8000"))
-    print("ONE dev server on http://localhost:%d  (production uses app/main.py)" % port)
+    print("Curiolet dev server on http://localhost:%d  (production uses app/main.py)" % port)
     ThreadingServer(("", port), Handler).serve_forever()

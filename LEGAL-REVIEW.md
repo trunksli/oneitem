@@ -7,7 +7,7 @@ the list of what a reviewer is being asked to check, most consequential first.
 
 ## 1. Copyright and the DMCA safe harbor
 
-ONE features third-party work: it shows each item's title, the publisher's
+Curiolet features third-party work: it shows each item's title, the publisher's
 `og:image`, a short preview (the opening sentences or an AI-written summary), and
 a link or official embed. It keeps at most 3,000 characters of source text, only
 until the item is scored.
@@ -66,7 +66,7 @@ carry misrepresentation risk.
 
 ## 7. Vimeo films and podcasts
 
-ONE now also features Vimeo Staff Picks (played in Vimeo's own player with
+Curiolet now also features Vimeo Staff Picks (played in Vimeo's own player with
 `dnt=1`) and podcast episodes (streamed from the publisher's audio host through
 the browser's own player, only after the visitor presses Listen). It reads
 Vimeo's public oEmbed endpoint for titles and thumbnails; it never downloads or
@@ -76,7 +76,7 @@ re-hosts audio or video.
   needs nothing beyond Vimeo's own terms, and whether the Terms should name Vimeo
   the way they name YouTube.
 - **Podcasts:** playing an episode's public enclosure URL is what every podcast
-  app does, but ONE is a website, not an app. Confirm that is fine, and that the
+  app does, but Curiolet is a website, not an app. Confirm that is fine, and that the
   Privacy Policy's note (audio hosts may measure downloads, including network
   address) is enough disclosure.
 
@@ -98,4 +98,4 @@ If any of these change, the documents must change with them:
 | Only public content is sent to Gemini, never user data | `backend/app/ai_scoring.py` |
 
 Contact address in the documents: `balmodyco@gmail.com`, shared with Balmody
-until ONE has its own name (confirmed by the operator, 9 September 2026).
+until Curiolet has its own name (confirmed by the operator, 9 September 2026).

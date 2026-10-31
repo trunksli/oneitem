@@ -1,5 +1,5 @@
 """
-Where ONE looks. Edit freely -- ingestion reads everything from here.
+Where Curiolet looks. Edit freely -- ingestion reads everything from here.
 
 Chosen for the incrementality thesis: obsessive experts, small publications, and
 work people are unlikely to meet in their feeds anyway. Every source below was
@@ -18,7 +18,7 @@ Costs per pipeline run (four a day), at most:
 NEW_ITEMS_PER_FEED = 3
 NEW_VIDEOS_PER_CHANNEL = 3
 
-# Shorts and trailers are not what ONE is for.
+# Shorts and trailers are not what Curiolet is for.
 MIN_VIDEO_SECONDS = 120
 
 # Articles and essays (RSS/Atom).
